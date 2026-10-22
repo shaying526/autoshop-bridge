@@ -1,0 +1,246 @@
+// System MSAA bridge. No clipboard, global input, injection or process memory.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using Accessibility;
+
+public static class BridgeAccessibility {
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+ [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
+ [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
+ [DllImport("user32.dll")] static extern bool IsChild(IntPtr p,IntPtr h);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h,StringBuilder s,int n);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder s,int n);
+ [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h,uint m,UIntPtr w,IntPtr l);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr h,uint m,UIntPtr w,IntPtr l,uint flags,uint timeout,out UIntPtr result);
+ [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr h,ref Point p);
+ [StructLayout(LayoutKind.Sequential)] struct Point {public int X,Y;}
+ [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr h,uint id,ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out IAccessible obj);
+ [DllImport("oleacc.dll")] static extern int AccessibleChildren(IAccessible o,int start,int count,[Out,MarshalAs(UnmanagedType.LPArray,SizeParamIndex=2)]object[] children,out int obtained);
+ sealed class Node {
+  public IAccessible Object; public object Id;
+  public Node(IAccessible o,object id){Object=o;Id=id;}
+  public string Name{get{return Object.get_accName(Id)??"";}}
+  public string Value{get{return Object.get_accValue(Id)??"";}}
+  public int Role{get{return Convert.ToInt32(Object.get_accRole(Id));}}
+  public int State{get{return Convert.ToInt32(Object.get_accState(Id));}}
+  IAccessible Client(){return (int)Id==0?Object:Object.get_accChild(Id) as IAccessible;}
+  public int ChildCount{get{IAccessible obj=Client();return obj==null?0:obj.accChildCount;}}
+  public Node ChildAt(int index){
+   IAccessible obj=Client();
+   if(obj==null || index<0 || index>=obj.accChildCount)throw new Exception("Child index is outside bounds");
+   object[] items=new object[1];int got;
+   Marshal.ThrowExceptionForHR(AccessibleChildren(obj,index,1,items,out got));
+   if(got!=1)throw new Exception("Accessibility child enumeration is incomplete");
+   if(items[0] is IAccessible)return new Node((IAccessible)items[0],0);
+   if(items[0] is int)return new Node(obj,items[0]);
+   throw new Exception("Unsupported accessibility child");
+  }
+  public List<Node> Children(){
+   IAccessible obj=(int)Id==0?Object:Object.get_accChild(Id) as IAccessible;
+   List<Node> list=new List<Node>();if(obj==null)return list;
+   int count=obj.accChildCount;if(count<0 || count>10000)throw new Exception("Unexpected accessibility child count");
+   object[] items=new object[count];int got;Marshal.ThrowExceptionForHR(AccessibleChildren(obj,0,count,items,out got));
+   for(int i=0;i<got;i++) {
+    if(items[i] is IAccessible)list.Add(new Node((IAccessible)items[i],0));
+    else if(items[i] is int)list.Add(new Node(obj,items[i]));
+   }
+   return list;
+  }
+ }
+ static string Text(IntPtr h){StringBuilder b=new StringBuilder(8192);GetWindowText(h,b,b.Capacity);return b.ToString();}
+ static string Class(IntPtr h){StringBuilder b=new StringBuilder(256);GetClassName(h,b,b.Capacity);return b.ToString();}
+ static Node Root(IntPtr h){Guid iid=new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");IAccessible o;Marshal.ThrowExceptionForHR(AccessibleObjectFromWindow(h,0xfffffffc,ref iid,out o));return new Node(o,0);}
+ static UIntPtr Message(IntPtr h,uint m,UIntPtr w,IntPtr l){UIntPtr value;if(SendMessageTimeout(h,m,w,l,2,1500,out value)==IntPtr.Zero)throw new Exception("Control message timed out");return value;}
+ static void Validate(IntPtr main,IntPtr target,int pid,string project,string program,bool tree){
+  uint p;GetWindowThreadProcessId(main,out p);if(p!=pid)throw new Exception("Main process changed");
+  GetWindowThreadProcessId(target,out p);if(p!=pid || !IsChild(main,target))throw new Exception("Target process/parent changed");
+  string title=Text(main);
+  if(!title.StartsWith("AutoShop ",StringComparison.OrdinalIgnoreCase) ||
+    !(title.EndsWith("  "+project,StringComparison.OrdinalIgnoreCase) || title.IndexOf("  "+project+" - [",StringComparison.OrdinalIgnoreCase)>=0))throw new Exception("Project title changed");
+  if(!IsWindowEnabled(main))throw new Exception("AutoShop modal dialog is open");
+  if(tree){
+   if(Class(target)!="SysTreeView32")throw new Exception("Expected project tree");
+   bool pane=false;for(IntPtr a=GetParent(target);a!=IntPtr.Zero && a!=main;a=GetParent(a))if(Text(a)=="\u5de5\u7a0b\u7ba1\u7406")pane=true;
+   if(!pane)throw new Exception("Tree is outside project management pane");
+  }else{
+   if(Class(target)!="VSFlexGrid8N")throw new Exception("Unsupported variable grid");
+   bool match=false;for(IntPtr a=GetParent(target);a!=IntPtr.Zero && a!=main;a=GetParent(a)){
+    if(Class(GetParent(a))=="MDIClient" && (Text(a)==program || Text(a)==program+"*" || Text(a)==program+" *"))match=true;
+   }
+   if(!match)throw new Exception("Grid is outside requested program");
+  }
+ }
+ sealed class GridSource:IBridgeGridSource {
+  readonly Node root;readonly Dictionary<int,Node> children=new Dictionary<int,Node>();
+  readonly Dictionary<long,Node> cells=new Dictionary<long,Node>();
+  public GridSource(Node root){this.root=root;}
+  public int ChildCount{get{return root.ChildCount;}}
+  Node Child(int index){Node n;if(!children.TryGetValue(index,out n)){n=root.ChildAt(index);children.Add(index,n);}return n;}
+  public Node Cell(int child,int column){
+   long key=((long)child<<32)|(uint)column;Node n;
+   if(!cells.TryGetValue(key,out n)){n=Child(child).ChildAt(column);cells.Add(key,n);}return n;
+  }
+  public int Role(int child){return Child(child).Role;}
+  public string Name(int child){return Child(child).Name;}
+  public int CellCount(int child){return Child(child).ChildCount;}
+  public int CellRole(int child,int column){return Cell(child,column).Role;}
+  public string CellName(int child,int column){return Cell(child,column).Name;}
+  public string Value(int child,int column){return Cell(child,column).Value;}
+ }
+ static void TreeFind(Node n,string program,List<Node> found,int depth,ref int count){
+  if(depth>32 || ++count>10000)throw new Exception("Project tree exceeds bounds");
+  if(n.Role==36 && n.Name==program)found.Add(n);
+  foreach(Node c in n.Children())TreeFind(c,program,found,depth+1,ref count);
+ }
+ static void Click(IntPtr target,Node cell,bool twice){
+  int x,y,w,h;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);
+  if(w<=2 || h<=2 || (cell.State&0x18000)!=0)throw new Exception("Target node/cell is offscreen; reveal it first");
+  int sx=x+w/2,sy=y+h/2;
+  int gx,gy,gw,gh;Node gridRoot=Root(target);gridRoot.Object.accLocation(out gx,out gy,out gw,out gh,0);
+  if(sx<gx || sy<gy || sx>=gx+gw || sy>=gy+gh)throw new Exception("Target geometry outside control");
+  object hit=Root(target).Object.accHitTest(sx,sy);
+  IAccessible hitObject=hit as IAccessible;
+  // This grid reports its row/root for hit tests, not the cell. Its actual
+  // selected-cell state must be checked in a subsequent request before F2.
+  if(twice && hitObject==null) {
+   if(!(hit is int))throw new Exception("Cannot verify hit test");
+   Node hitNode=new Node(Root(target).Object,hit);
+   if(hitNode.Name!=cell.Name)throw new Exception("Hit test identity mismatch");
+  }else if(twice){
+   Node hitNode=new Node(hitObject,0);
+   if(hitNode.Name!=cell.Name || (!twice && hitNode.Value!=cell.Value))throw new Exception("Hit test identity/value mismatch");
+  }
+  Point p=new Point{X=sx,Y=sy};if(!ScreenToClient(target,ref p) || p.X<0 || p.Y<0 || p.X>32767 || p.Y>32767)throw new Exception("Invalid target geometry");
+  IntPtr pos=new IntPtr(p.X|(p.Y<<16));
+  uint[] messages=twice?new uint[]{0x201,0x202,0x203,0x202}:new uint[]{0x201,0x202};
+  foreach(uint msg in messages)if(!PostMessage(target,msg,new UIntPtr(msg==0x202?0u:1u),pos))throw new Exception("Targeted click post failed");
+ }
+ static List<Node> FindCells(Node root,string variable,string column,string expected,out BridgeGridReader.CellAddress address){
+  GridSource source=new GridSource(root);
+  address=BridgeGridReader.Find(source,variable,column,expected);
+  // Find validates the logical declaration value. Geometry and selected state
+  // must use its name-joined physical row, whose left-side Value may be blank.
+  return new List<Node>{source.Cell(address.DisplayChild,address.Column)};
+ }
+ static Node RevealCell(IntPtr target,string variable,string column,string expected){
+  Node root=Root(target);BridgeGridReader.CellAddress address;
+  List<Node> found=FindCells(root,variable,column,expected,out address);
+  int count=root.ChildCount;
+  for(int i=0;i<64;i++) {
+   if(i>0){
+    root=Root(target);GridSource source=new GridSource(root);
+    if(root.ChildCount!=count)throw new Exception("Grid size changed while revealing cell");
+    Node value=source.Cell(address.Child,address.Column);
+    string key=variable.StartsWith("#row:",StringComparison.Ordinal)?"":variable;
+    if(value.Name!=column || value.Value!=expected || source.Cell(address.Child,address.KeyColumn).Value!=key)throw new Exception("Declaration changed during reveal");
+    if(address.FullNameColumn>=0 && source.Cell(address.DisplayChild,address.FullNameColumn).Value!=key)throw new Exception("Physical row identity changed during reveal");
+    found=new List<Node>{source.Cell(address.DisplayChild,address.Column)};
+   }
+   if(found.Count!=1)throw new Exception("Cell changed during reveal");
+   Node cell=found[0];
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   int sx=x+w/2,sy=y+h/2;
+   if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)return cell;
+   if(w<=2 || h<=2)throw new Exception("Variable column is hidden");
+   if(sx<gx || sx>=gx+gw)Message(target,0x114,new UIntPtr(sx<gx?0u:1u),IntPtr.Zero);
+   else {
+    // ActiveX consumes wheel input itself rather than outer WM_VSCROLL.
+    int packed=((gx+gw/2)&0xffff)|(((gy+gh/2)&0xffff)<<16);
+    uint wheel=sy<gy+20?0x00780000u:0xff880000u;
+    Message(target,0x20a,new UIntPtr(wheel),new IntPtr(packed));
+   }
+   System.Threading.Thread.Sleep(20);
+  }
+  throw new Exception("Could not reveal variable cell by targeted scrolling");
+ }
+ static bool VisibleSelection(int state,int x,int y,int w,int h,int gx,int gy,int gw,int gh){
+  int sx=x+w/2,sy=y+h/2;
+  return (state&2)!=0 && (state&0x18000)==0 && w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh;
+ }
+ static void WaitForSelection(Func<bool> check,int milliseconds){
+  if(milliseconds<1 || milliseconds>4000)throw new ArgumentOutOfRangeException("milliseconds");
+  Stopwatch selected=Stopwatch.StartNew();
+  do{
+   if(check())return;
+   System.Threading.Thread.Sleep(20);
+  }while(selected.ElapsedMilliseconds<milliseconds);
+  throw new Exception("Requested cell is not actually selected before timeout");
+ }
+ public static object Run(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
+  IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);bool tree=action=="open" || action=="tree_context";
+  Validate(main,target,pid,project,program,tree);Node root=Root(target);
+  if(action=="grid_columns"){
+   var columns=new List<string>();
+   if(root.ChildCount<2 || root.ChildCount>10000)throw new Exception("Unsupported grid size");
+   for(int i=0;i<root.ChildCount && root.ChildAt(i).Role==25;i++){
+    if(columns.Count>=32)throw new Exception("Too many grid columns");columns.Add(root.ChildAt(i).Name);
+   }
+   Validate(main,target,pid,project,program,false);
+   return new Dictionary<string,object>{{"columns",columns},{"accessible_children",root.ChildCount}};
+  }
+  if(action=="grid" || action=="grid_display"){
+   object result=action=="grid"?BridgeGridReader.Read(new GridSource(root)):BridgeGridReader.ReadDisplayed(new GridSource(root));
+   Validate(main,target,pid,project,program,false);return result;
+  }
+  if(action=="open" || action=="tree_context"){
+   if(action=="tree_context" && program!="程序块" && program!="功能块" && program!="数据类型" && program!="全局变量表")throw new Exception("Unsupported creation category");
+   List<Node> found=new List<Node>();int count=0;TreeFind(root,program,found,0,ref count);
+   if(found.Count!=1)throw new Exception("Expected one exact program tree node; found "+found.Count);
+   if((int)found[0].Id<=0)throw new Exception("Unsupported tree item identity");
+   UIntPtr item=Message(target,0x112a,new UIntPtr((uint)(int)found[0].Id),IntPtr.Zero);
+   if(item==UIntPtr.Zero)throw new Exception("Cannot map tree item identity");
+   Message(target,0x1114,UIntPtr.Zero,new IntPtr(unchecked((long)item.ToUInt64())));
+   Message(target,0x110b,new UIntPtr(9),new IntPtr(unchecked((long)item.ToUInt64())));
+   Validate(main,target,pid,project,program,true);
+   if(action=="open"){Click(target,found[0],true);return "open_posted";}
+   int x,y,w,h;found[0].Object.accLocation(out x,out y,out w,out h,found[0].Id);
+   if(w<=2 || h<=2 || (found[0].State&0x18000)!=0)throw new Exception("Creation category is offscreen");
+   Point point=new Point{X=x+w/2,Y=y+h/2};
+   if(!ScreenToClient(target,ref point) || point.X<0 || point.Y<0 || point.X>32767 || point.Y>32767)throw new Exception("Invalid category geometry");
+   IntPtr position=new IntPtr(point.X|(point.Y<<16));
+   if(!PostMessage(target,0x204,new UIntPtr(2),position) || !PostMessage(target,0x205,UIntPtr.Zero,position))throw new Exception("Category context click failed");
+   return "context_posted";
+  }
+  if(action=="select_verified_cell"){
+   Node visible=RevealCell(target,variable,column,expected);
+   Validate(main,target,pid,project,program,false);
+   Click(target,visible,false);
+   WaitForSelection(delegate{
+    // Fresh lookup after the posted click: no reuse of the selection/value
+    // snapshot from before the UI processed that click.
+    Validate(main,target,pid,project,program,false);
+    BridgeGridReader.CellAddress address;Node currentRoot=Root(target);
+    List<Node> cells=FindCells(currentRoot,variable,column,expected,out address);
+    if(cells.Count!=1)throw new Exception("Cell baseline/identity mismatch");
+    int state=cells[0].State;
+    int x,y,w,h,gx,gy,gw,gh;
+    cells[0].Object.accLocation(out x,out y,out w,out h,cells[0].Id);
+    currentRoot.Object.accLocation(out gx,out gy,out gw,out gh,0);
+    if(VisibleSelection(state,x,y,w,h,gx,gy,gw,gh)){
+     Validate(main,target,pid,project,program,false);return true;
+    }
+    return false;
+   },4000);
+   return "selection_verified";
+  }
+  if(action=="select_cell" || action=="check_cell" || action=="cell_info"){
+   if(action=="select_cell"){Node visible=RevealCell(target,variable,column,expected);Click(target,visible,false);return "selection_posted";}
+   BridgeGridReader.CellAddress address;List<Node> cells=FindCells(root,variable,column,expected,out address);
+   if(cells.Count!=1)throw new Exception("Cell baseline/identity mismatch");
+   if(action=="cell_info"){
+    int x,y,w,h,gx,gy,gw,gh;cells[0].Object.accLocation(out x,out y,out w,out h,cells[0].Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+    Node row=root.ChildAt(address.Child);int rx,ry,rw,rh;row.Object.accLocation(out rx,out ry,out rw,out rh,row.Id);
+    return new Dictionary<string,object>{{"state",cells[0].State},{"rect",new int[]{x,y,w,h}},{"grid",new int[]{gx,gy,gw,gh}},
+      {"row_rect",new int[]{rx,ry,rw,rh}},{"row_state",row.State},{"child_index",address.Child},{"display_child_index",address.DisplayChild},{"column_index",address.Column},
+      {"logical_value",row.ChildAt(address.Column).Value},{"display_value",cells[0].Value},
+      {"display_name",root.ChildAt(address.DisplayChild).ChildAt(address.KeyColumn).Value}};
+   }
+   if((cells[0].State&2)==0)throw new Exception("Requested cell is not actually selected");
+   return "selection_verified";
+  }
+  throw new Exception("Unknown accessibility action");
+ }
+}
