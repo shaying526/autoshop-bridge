@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "autoshop-bridge",
   "mode": "portable-bundled-runtime",
-  "skill_revision": "2026-10-23.s1",
+  "skill_revision": "2026-10-23.s3",
   "backend_version": "1.02",
   "source_commit": "545bc74a7df61ed21ad1e5eb5a0037a52d7c22f2",
   "backend_origin": "canonical development source; generated snapshot, not a second maintained implementation",
@@ -60,12 +60,12 @@
   },
   "files": {
     "README.md": {
-      "sha256": "ca7e181a8bafc0c3ba35ebb0a458ce22e8ea9c3c7a951d31d2dccc9ca3db8bf9",
-      "bytes": 12791
+      "sha256": "6e1d0f2a9db9acc97890a7a18882323b83aa7e02a594b55c123c578e958586b8",
+      "bytes": 13685
     },
     "SKILL.md": {
-      "sha256": "7a1f8cba303a5d02b9c620ca3178e16f3fd57e72cbaae19336b300a3b8bd1d3f",
-      "bytes": 5706
+      "sha256": "ed8ed8e4344ee6f7789f46878fa083cce639c2f79a36968e28cbebe5b387c9d7",
+      "bytes": 5950
     },
     "backend/autoshop_bridge/__init__.py": {
       "sha256": "627e10398a2c63bf59f9bafd07b16443036e546e7a2b03f7a936272a57e156f9",
@@ -248,20 +248,20 @@
       "bytes": 5651
     },
     "references/environment.md": {
-      "sha256": "c093a46945054317d8a78dc5fdcbfc6ba4e9aedabb780826351e315d6c5d6f70",
-      "bytes": 4179
+      "sha256": "b7232b9998d12315a4e47ed8f00a551604a29daca8a47635db1d4e9040dda1f2",
+      "bytes": 5162
     },
     "references/source-editing.md": {
-      "sha256": "a7d243686cfc22521c7004646568df2d95a0fa2061dbff41440bedbc8dafb769",
-      "bytes": 6436
+      "sha256": "21b8a6833d1f9dcb04e76e2253ac31352d40cf02fd4650e7078c6dbaf555ab80",
+      "bytes": 6785
     },
     "references/validation.md": {
-      "sha256": "62fda00b070be1388bf64c83540ceda4990bf8e61e6d1162175e4aa8e20cdab7",
-      "bytes": 5484
+      "sha256": "f4353912685917c17e6f36f61dde486a02233b582c19910094b1f9c8de0db41b",
+      "bytes": 4501
     },
     "scripts/check_bundle.py": {
-      "sha256": "749a00da5f6772c862d413894732f5e93f1bc2a5b3099c7fc2ae65a123670d50",
-      "bytes": 2073
+      "sha256": "22ac32dd9ea5bd867234fb7aa7353277bb32922fdde3e4d77bd9880ffc0949af",
+      "bytes": 2523
     }
   }
 }

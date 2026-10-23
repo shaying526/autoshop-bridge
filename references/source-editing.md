@@ -15,6 +15,8 @@ python -B $bridge source-read $work --search 'Ready' --context 2 --limit 5
 
 原生ST/FB/FC是二进制容器，不是明文源码，不能直接做文本替换或在原生字节中搜索明文来判断写入成功。`export`生成manifest.json、original.native、source.st；FB/FC另有variables.json。只可编辑source.st，其他文件均只读。`source-read`返回`source_sha256`和有界`rows`，不是直接读IDE；优先limit，不将固定end设到实际总行数以外。
 
+正文为空不等于读取失败：受支持容器可导出0字节的source.st，source-read按LF数+1返回1个空行。零字节原生文件或未识别布局仍应报错；不要要求用户先填代码来掩盖解析问题。尚未识别的空工程登记或行表布局需要真实样本，不能由合成空正文测试推定全部兼容。
+
 方法二在写前需要真实编辑器基线：
 
 ```powershell

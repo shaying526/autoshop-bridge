@@ -30,8 +30,15 @@ def check(root):
         if len(raw) != meta["bytes"] or hashlib.sha256(raw).hexdigest() != meta["sha256"]:
             raise ValueError("Bundle resource mismatch: " + name)
     actual = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
-    if actual != set(expected) | {"bundle-manifest.json"}:
-        raise ValueError("Unexpected or missing bundle files")
+    required = set(expected) | {"bundle-manifest.json"}
+    if actual != required:
+        unexpected = sorted(actual - required)
+        missing = sorted(required - actual)
+        # Bound diagnostics; never delete files or weaken the exact-file-set check.
+        detail = dict(unexpected_count=len(unexpected), missing_count=len(missing),
+                      unexpected=[name[:200] for name in unexpected[:10]],
+                      missing=[name[:200] for name in missing[:10]])
+        raise ValueError("Unexpected or missing bundle files: " + json.dumps(detail))
     return dict(status="bundle_verified", backend_version=manifest["backend_version"],
                 skill_revision=manifest["skill_revision"], files=len(actual),
                 autoshop_tested=False, readonly=True)

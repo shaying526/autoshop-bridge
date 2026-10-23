@@ -6,7 +6,7 @@
 
 Let your local AI assistant read, query and modify AutoShop PLC projects through a versioned, script-backed Skill.
 
-**Preview:** backend 1.02 · Skill packaging revision 2026-10-23.s1 · updated 2026-10-23. This is a test distribution, not a completed public release or a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
+**Preview:** backend 1.02 · Skill packaging revision 2026-10-23.s3 · updated 2026-10-23. This is a test distribution, not a completed public release or a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
 
 ### Install in one sentence
 
@@ -16,6 +16,8 @@ Let your local AI assistant read, query and modify AutoShop PLC projects through
 | Claude Code on the local Windows machine | Place this **complete folder** at `.claude/skills/autoshop-bridge/` in your project, start Claude Code there and invoke `/autoshop-bridge`; this package has not yet been tested in Claude Code. |
 
 Keep `SKILL.md`, `backend/`, references and the manifest together. These paths are client-specific; ordinary ChatGPT/Claude web chats have no supplied local AutoShop integration in this preview. Optional user-wide locations are `~/.agents/skills/autoshop-bridge/` for current Codex and `~/.claude/skills/autoshop-bridge/` for Claude Code; installation is the user's choice, never performed by this Skill.
+
+Install a clean exported package in a new directory. A Git clone containing `.git/`, extra files or Python caches fails the strict bundle check; keep repository metadata outside the installed Skill. On failure, preserve the installation and follow [deployment diagnostics](references/environment.md#安装完整性失败); do not delete unknown files or alter the manifest to bypass verification.
 
 Codex discovers project skills from its working directory and repository ancestors, not arbitrary child projects. If discovery is missing, check the directory/layout and start a new session or restart the client. The development repository's small discovery adapter depends on this full folder and is not a standalone distribution. Client discovery rules: [Codex](https://learn.chatgpt.com/docs/build-skills), [Claude Code](https://code.claude.com/docs/en/skills). Documented installation is distinct from tested runtime compatibility.
 
@@ -67,7 +69,7 @@ python -B "$skill/scripts/check_bundle.py"
 python -B "$skill/examples/offline_smoke.py" --output $out
 ```
 
-See [two-project acceptance and recorded results](references/validation.md). The smoke test creates synthetic fixtures only, never opens AutoShop and never compiles. Independent AI trials completed ST/FC tasks; implicit client discovery and two real-project IDE trials remain untested. Compilation and device behavior are separate evidence stages.
+See [two-project acceptance steps](references/validation.md). The smoke test creates synthetic fixtures only, never opens AutoShop and never compiles. Independent AI trials completed ST/FC tasks; implicit client discovery and two real-project IDE trials remain untested. Trial results belong in separate development records, not in the AI's routine instructions. Compilation and device behavior are separate evidence stages.
 
 For failure, retain the JSON error, completed stage and backup path; inspect current state before retrying. Do not save stale windows or assume rollback. See [environment and recovery](references/environment.md). This package includes no precompiled development cache: grid access uses the supported PowerShell/fixed-C# fallback. It needs no always-on service or MCP, and exposes no unified progress/cancellation API.
 
@@ -78,7 +80,7 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 让支持Skill与本机命令的AI助手，通过经过校验的脚本读取、检索和修改AutoShop工程。
 
 整理方式：AI 根据现有代码、使用说明及用户确认整理  
-当前状态：测试分发包；固定后台1.02，封装修订2026-10-23.s1；公开发布和新环境IDE验收待完成  
+当前状态：测试分发包；固定后台1.02，封装修订2026-10-23.s3；公开发布和新环境IDE验收待完成  
 最后更新：2026-10-23
 
 AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读完整后台源码或开发历史。
@@ -91,6 +93,8 @@ AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读�
 | 本机Windows上的Claude Code | 将本目录**完整放入**项目的 `.claude/skills/autoshop-bridge/`，在该项目启动Claude Code并输入 `/autoshop-bridge`；本包尚未在Claude Code实测。 |
 
 SKILL.md、backend、参考文档和清单必须一起保留。上述路径分别属于对应客户端；本预览包没有提供普通ChatGPT／Claude网页聊天的本机AutoShop对接入口。可选全局安装由用户自行决定：当前Codex用户级目录是`~/.agents/skills/autoshop-bridge/`，Claude Code是`~/.claude/skills/autoshop-bridge/`，本Skill不自动安装或修改全局配置。
+
+安装时使用可信的完整干净导出包和全新目录。含`.git/`的克隆目录、额外文件或Python缓存会被严格包检查拒绝，仓库元数据不能混入运行安装目录。失败时保留原安装，按[部署排错](references/environment.md#安装完整性失败)处理，不删除未知文件或改清单绕过。
 
 Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下扫描子项目。未出现时先核对目录和完整布局，再开新会话或重启客户端。开发仓库的小型发现适配依赖本完整目录，不能单独复制。官方安装依据：[Codex](https://learn.chatgpt.com/docs/build-skills)、[Claude Code](https://code.claude.com/docs/en/skills)；安装路径有依据不等于本包已在该客户端验收。
 
@@ -142,7 +146,7 @@ python -B "$skill/scripts/check_bundle.py"
 python -B "$skill/examples/offline_smoke.py" --output $out
 ```
 
-[两项目验收及结果](references/validation.md)区分离线、独立AI和真实IDE。冒烟只生成并修改合成样例，不打开AutoShop、不编译。独立AI已完成ST/FC任务；客户端自动发现和两真实工程IDE试验仍待验。写出、保存、回读、编译与设备行为分别记证。
+[两项目验收步骤](references/validation.md)区分离线、独立AI和真实IDE。冒烟只生成并修改合成样例，不打开AutoShop、不编译。独立AI已完成ST/FC任务；历史试用结果在包外开发记录维护，不混入AI日常操作说明。客户端自动发现和两真实工程IDE试验仍待验。写出、保存、回读、编译与设备行为分别记证。
 
 失败时保留错误JSON、阶段和备份位置，先检查现状，再决定重试；不要保存旧窗口或假定自动回滚，详见[环境与恢复](references/environment.md)。本包不带开发机预编译缓存，grid使用既有PowerShell固定C#兼容入口；无常驻服务/MCP或统一进度、取消接口。
 

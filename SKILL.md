@@ -27,7 +27,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.02`；不符或资源缺失先报告部署问题。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。依赖与故障见[环境和限制](references/environment.md)。
+应读到CLI `1.02`且包检查为`bundle_verified`；`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
@@ -58,4 +58,4 @@ python -B $bridge source-read "$artifacts/calc-work" --start 1 --limit 20
 
 说明目标与修改/只读范围、产物和不可覆盖备份位置、实际JSON状态、完整回读与非目标检查结果；明确哪些仅离线/模拟、哪些是用户本轮编译反馈、哪些未验证。错误只给必要对象/阶段和诊断，不输出整个工程或敏感内容。
 
-首次试用按[两项目验收](references/validation.md)执行；它提供纯合成离线冒烟和真实IDE待验记录，不能把合成容器当成AutoShop已编译工程。
+需要部署验收或重放冒烟时，再读[两项目验收](references/validation.md)；普通读取/编辑任务无需加载验收文档。试用结果保存在包外开发记录，不作为新AI的操作答案。不能把合成容器当成AutoShop已编译工程。
