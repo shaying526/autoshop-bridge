@@ -70,7 +70,7 @@ __all__ = (
 def scan(project: Path, output: Optional[Path] = None) -> dict:
     from autoshop_bridge.projects.inventory import scan as scan_project
 
-    result = scan_project(project)
+    result = scan_project(project, allow_readonly_tail=True)
     if output is not None:
         write_json_new(output, result)
         return {

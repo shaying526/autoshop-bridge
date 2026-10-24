@@ -24,7 +24,7 @@ def read(project, definitions_dir, table=None, type_name=None, search=None,
         raise BridgeError("System definitions directory is required.")
     paths = [regular_file(directory / name) for name in ("SysVarDef.xml", "SysDataTypeDef.xml")]
     data = [bounded_read(path) for path in paths]
-    inventory = scan(Path(project))
+    inventory = scan(Path(project), allow_readonly_tail=True)
     model = inventory["project_metadata"].get("GCMModal")
     catalog = parse(*data, model)
     registered = [r for r in inventory["files"] if r.get("kind") == "system_variables"]

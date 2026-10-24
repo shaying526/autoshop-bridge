@@ -113,7 +113,7 @@ def source_chains(text):
 
 
 def build_index(project):
-    inventory = scan(project)
+    inventory = scan(project, allow_readonly_tail=True)
     declarations, sources, unsupported = [], [], []
     for item in inventory["files"]:
         if item.get("status") != "parsed":

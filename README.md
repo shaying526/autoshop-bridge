@@ -6,7 +6,7 @@
 
 Let your local AI assistant read, query and modify AutoShop PLC projects through a versioned, script-backed Skill.
 
-**Preview:** backend 1.02 · Skill packaging revision 2026-10-23.s3 · updated 2026-10-23. This is a test distribution, not a completed public release or a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
+**Preview:** backend 1.02 · Skill packaging revision 2026-10-24.s5 · updated 2026-10-24. This is a test distribution, not a completed public release or a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
 
 ### Install in one sentence
 
@@ -80,8 +80,8 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 让支持Skill与本机命令的AI助手，通过经过校验的脚本读取、检索和修改AutoShop工程。
 
 整理方式：AI 根据现有代码、使用说明及用户确认整理  
-当前状态：测试分发包；固定后台1.02，封装修订2026-10-23.s3；公开发布和新环境IDE验收待完成  
-最后更新：2026-10-23
+当前状态：测试分发包；后台1.02含只读HCPP兼容修正，封装修订2026-10-24.s5；公开发布和新环境IDE验收待完成  
+最后更新：2026-10-24
 
 AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读完整后台源码或开发历史。
 

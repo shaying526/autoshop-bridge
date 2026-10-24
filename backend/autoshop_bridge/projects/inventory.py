@@ -1,6 +1,7 @@
 """Read-only project inventory; the HCPP registration is a possibly stale mirror."""
 
 import json
+import sys
 import struct
 import xml.etree.ElementTree as ET
 import zlib
@@ -26,36 +27,50 @@ def bounded_read(path):
 
 def member_path(name):
     value = PureWindowsPath(name)
+    parts = name.replace("\\", "/").split("/")
     if (
         not name
         or value.is_absolute()
         or value.drive
         or value.root
-        or any(p in ("..", ".") for p in value.parts)
-        or ":" in name
-        or "\x00" in name
+        or any(p in ("", "..", ".") or p.endswith((".", " ")) for p in parts)
+        or any(c in name for c in ':<>"|?*')
+        or any(ord(c) < 32 for c in name)
+        or any(PureWindowsPath(p).is_reserved() for p in parts)
     ):
         raise BridgeError("Unsafe project member path: {!r}".format(name))
     return value.parts
 
 
-def unpack_mirror(raw):
+def _mirror_contents(raw, *, allow_readonly_tail=False):
+    if len(raw) > MAX_NATIVE_SIZE:
+        raise BridgeError("HCPP input exceeds 16 MiB.")
     if len(raw) < 40 or raw[:4] != b"PPCH":
         raise BridgeError("Unsupported HCPP header.")
     expected = struct.unpack_from("<I", raw, 6)[0]
+    compressed_length = struct.unpack_from("<I", raw, 10)[0]
     count = struct.unpack_from("<I", raw, 32)[0]
-    if expected > MAX_NATIVE_SIZE or not 1 <= count <= 10000:
+    # Sample-supported profile, not a complete vendor format specification.
+    if raw[4:6] != b"\x00\x03" or raw[14:32] != bytes(18):
+        raise BridgeError("Unsupported HCPP header profile.")
+    if not 1 <= expected <= MAX_NATIVE_SIZE or not 1 <= count <= 10000:
         raise BridgeError("Unsupported HCPP length/count.")
+    if compressed_length != len(raw) - 40:
+        raise BridgeError("Invalid HCPP compressed length.")
+    compressed = raw[36:-4]
+    crc = zlib.crc32(compressed)
+    if struct.unpack_from("<I", raw, len(raw) - 4)[0] != crc:
+        raise BridgeError("Invalid HCPP compressed CRC32.")
     decoder = zlib.decompressobj()
     try:
-        data = decoder.decompress(raw[36:], MAX_NATIVE_SIZE + 1)
+        data = decoder.decompress(compressed, expected + 1)
     except zlib.error as exc:
         raise BridgeError("Invalid HCPP compressed data.") from exc
     if (
         not decoder.eof
         or len(data) != expected
         or decoder.unconsumed_tail
-        or len(decoder.unused_data) != 4
+        or decoder.unused_data
     ):
         raise BridgeError("Invalid HCPP compressed boundaries.")
     result, names, pos = {}, {}, 0
@@ -69,12 +84,12 @@ def unpack_mirror(raw):
             name = data[pos + 8 : pos + 8 + size].decode("utf-8")
         except UnicodeDecodeError as exc:
             raise BridgeError("Invalid HCPP member name encoding.") from exc
-        member_path(name)
+        parts = member_path(name)
         length = struct.unpack_from("<I", data, pos + 8 + size)[0]
         if block != 12 + size + length or pos + block > len(data):
             raise BridgeError("Invalid HCPP member data boundary.")
         content = data[pos + 12 + size : pos + block]
-        key = name.casefold()
+        key = "/".join(parts).casefold()
         # The observed archive repeats one hardware file byte-for-byte.
         # Accept identical entries only; never select among different versions.
         if key in names:
@@ -84,9 +99,74 @@ def unpack_mirror(raw):
             names[key] = name
             result[name] = content
         pos += block
-    if data[pos:] != b"\0" * 4:
-        raise BridgeError("Unsupported HCPP member tail.")
-    return result
+    tail = data[pos:]
+    # Count + every block length locate this suffix independently of its value.
+    # Integrity proves bounded extraction, NOT the suffix's business semantics.
+    # Read-only consumers expose it as opaque; mutation callers remain strict.
+    if len(tail) != 4 or (not allow_readonly_tail and tail != bytes(4)):
+        raise BridgeError(
+            "Unsupported HCPP member tail: decompressed_offset={}, "
+            "member_count={}, tail_length={}, tail_hex={}, policy={}.".format(
+                pos, count, len(tail), tail[:16].hex(),
+                "readonly" if allow_readonly_tail else "strict",
+            )
+        )
+    return result, dict(
+        profile="ppch-0003-bounded-members-v1",
+        validation="bounded_extraction_only",
+        archive_sha256=sha256(raw), compressed_crc32="{:08x}".format(crc),
+        compressed_crc32_verified=True, decompressed_size=len(data),
+        member_count=count, unique_member_count=len(result),
+        member_tail_offset=pos, member_tail_hex=tail.hex(),
+        member_tail_semantics="unknown", strict_tail_accepted=(tail == bytes(4)),
+    )
+
+
+def unpack_mirror(raw, *, allow_readonly_tail=False):
+    return _mirror_contents(raw, allow_readonly_tail=allow_readonly_tail)[0]
+
+
+def _shared_read(path):
+    """Ordinary read handle with maximum sharing; never bypass existing shares."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.ReadFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                               ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+    kernel.ReadFile.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0x80000000, 7, None, 3, 0, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        chunks, total = [], 0
+        while total <= MAX_NATIVE_SIZE:
+            buffer = ctypes.create_string_buffer(min(65536, MAX_NATIVE_SIZE + 1 - total))
+            size = wintypes.DWORD()
+            if not kernel.ReadFile(handle, buffer, len(buffer), ctypes.byref(size), None):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not size.value:
+                return b"".join(chunks)
+            chunks.append(buffer.raw[:size.value])
+            total += size.value
+        raise BridgeError("Project input exceeds 16 MiB: {}".format(path))
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _read_hcp(path):
+    try:
+        return bounded_read(path)
+    except PermissionError:
+        if sys.platform != "win32":
+            raise
+        return _shared_read(path)
 
 
 def registration(raw):
@@ -134,27 +214,47 @@ def program_language(suffix, file_type, program_type):
     return None, None
 
 
-def scan(project):
+def scan(project, *, allow_readonly_tail=False):
     hcp = select_project(project)
     directory = hcp.parent
     source = {"path": str(hcp), "kind": "hcp", "possibly_stale": False}
     try:
-        raw = bounded_read(hcp)
+        raw = _read_hcp(hcp)
     except PermissionError as exc:
         mirror = hcp.with_suffix(".hcpp")
-        members = unpack_mirror(bounded_read(mirror))
-        matches = [v for k, v in members.items() if k.casefold() == hcp.name.casefold()]
-        if len(matches) != 1:
-            raise BridgeError("HCPP does not contain the selected HCP registration.")
-        raw = matches[0]
+        winerror = getattr(exc, "winerror", None)
+        reason = "sharing_violation" if winerror == 32 else "access_denied"
+        try:
+            members, validation = _mirror_contents(
+                bounded_read(mirror), allow_readonly_tail=allow_readonly_tail
+            )
+            matches = [v for k, v in members.items() if k.casefold() == hcp.name.casefold()]
+            if len(matches) != 1:
+                raise BridgeError("HCPP does not contain the selected HCP registration.")
+            raw = matches[0]
+            root = registration(raw)
+        except (OSError, BridgeError) as mirror_exc:
+            raise BridgeError(
+                "HCP registration unavailable: {} ({}; {}; winerror={}); "
+                "HCPP fallback failed: {}: {} "
+                "In AutoShop, review disk/editor differences and save only changes "
+                "you intend to keep, then close the entire target project and retry. "
+                "Closing document tabs is insufficient; exiting AutoShop is unnecessary.".format(
+                    hcp.name, type(exc).__name__, reason, winerror, mirror.name, mirror_exc
+                )
+            ) from mirror_exc
         source = {
             "path": str(mirror),
             "member": hcp.name,
             "kind": "hcpp_mirror",
             "possibly_stale": True,
             "hcp_read_error": str(exc),
+            "hcp_read_reason": reason,
+            "hcp_winerror": winerror,
+            "mirror_validation": validation,
         }
-    root = registration(raw)
+    else:
+        root = registration(raw)
     source["sha256"] = sha256(raw)
     files, seen = [], set()
     for node in root.findall("file"):
@@ -293,7 +393,7 @@ def summary(project, limit=20, offset=0):
         or not 0 <= offset <= 100000
     ):
         raise BridgeError("Summary limit must be 1..100 and offset 0..100000.")
-    inventory = scan(project)
+    inventory = scan(project, allow_readonly_tail=True)
     objects, pending = [], Counter()
     programming = {
         "st_program",
