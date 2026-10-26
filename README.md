@@ -4,30 +4,25 @@
 
 ## English
 
-s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
+## **Let AI read and edit Inovance AutoShop projects directly!**
 
-**Let AI read and edit Inovance AutoShop projects directly. Bring vibe coding to PLC development and leave repetitive copy-and-paste behind.**
-
-s10 fixes stale-mirror rejection in the explicit body registration-receipt route. A locked HCP is still unreadable; the existing target is checked using the closed direct-HCP snapshot, live process/tree, all frozen files and clean editor content. Mirror differences remain advisory. Saving still invalidates the receipt. Independent-copy capture/open/read/edit/save/full-readback passed; no compilation was requested or performed in this fix.
-
-s9 fixes a conservative rejection of literal `=` in structure-member comments. Independent AutoShop V4.11.0.5 copies verified INOUT ports and structured globals through IDE saves, offline writes, full readback and zero-error compilation. Other unobserved delimiters and nonzero unknown ST row fields remain rejected; a multi-target request can still be blocked elsewhere. See [offline editing](references/offline-editing.md).
-
-Let your local AI assistant read, query and modify AutoShop PLC projects through a versioned, script-backed Skill.
-
-**Preview:** backend 1.03 · Skill packaging revision **2026-10-26.s11** · updated 2026-10-26. Updates [closed-project offline development](references/offline-editing.md), local FB structures and structured globals; adds [explicit declaration deletion](references/declaration-editing.md) in both modes and verified FBI backup/restore. Deletion does not check or cascade references; compilation remains a separate check. Empty-FBI creation/deletion is still unavailable. Experimental ladder reading remains read-only. This is a test distribution, not a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
+**Bring vibe coding to PLC development and leave repetitive copy-and-paste behind.**
 
 ### Install in one sentence
 
-| Client | Project-level setup |
-| --- | --- |
-| Codex, including Codex in the ChatGPT desktop app | Place this **complete folder** at `.agents/skills/autoshop-bridge/` in your project, open a session in that project and invoke `$autoshop-bridge`. |
-| Claude Code on the local Windows machine | Place this **complete folder** at `.claude/skills/autoshop-bridge/` in your project, start Claude Code there and invoke `/autoshop-bridge`; this package has not yet been tested in Claude Code. |
+Place this **complete Skill folder** at `.agents/skills/autoshop-bridge/` in your Codex project, then invoke `$autoshop-bridge`.
 
-Keep `SKILL.md`, `backend/`, references and the manifest together. These paths are client-specific; ordinary ChatGPT/Claude web chats have no supplied local AutoShop integration in this preview. Optional user-wide locations are `~/.agents/skills/autoshop-bridge/` for current Codex and `~/.claude/skills/autoshop-bridge/` for Claude Code; installation is the user's choice, never performed by this Skill.
+### Minimal use
 
-Install a clean exported package in a new directory. A Git clone containing `.git/`, extra files or Python caches fails the strict bundle check; keep repository metadata outside the installed Skill. On failure, preserve the installation and follow [deployment diagnostics](references/environment.md#安装完整性失败); do not delete unknown files or alter the manifest to bypass verification.
+Tell your AI where the project is and what to change:
 
-Codex discovers project skills from its working directory and repository ancestors, not arbitrary child projects. If discovery is missing, check the directory/layout and start a new session or restart the client. The development repository's small discovery adapter depends on this full folder and is not a standalone distribution. Client discovery rules: [Codex](https://learn.chatgpt.com/docs/build-skills), [Claude Code](https://code.claude.com/docs/en/skills). Documented installation is distinct from tested runtime compatibility.
+```text
+$autoshop-bridge Scan C:\PLC\Demo and summarize its programs and variable tables.
+
+Add a comment to the specified ST program in Editor Mode; do not save yet.
+```
+
+Use a supported local Windows AI client with command access. Give the exact project path; ask for saved edits when you want files written.
 
 ### Two editing modes
 
@@ -47,17 +42,24 @@ Common combinations:
 - **Offline batch:** user closes the project → file reads/writes → user reopens, checks and compiles.
 - **Read-only analysis:** use file queries first; read the editor when unsaved content matters. Protect unsaved user changes and resolve baseline differences before writing.
 
-### Try asking
-
-1. “Use autoshop-bridge to scan this project and summarize programs and variable tables without changes.”
-2. “Add a comment to the specified ST program using Editor Mode, but do not save yet.”
-3. “Read this ladder FB's first two networks, local variables and FB call pins without changing the project.”
-
 ### Requirements and scope
 
 Python 3.9+; runtime uses only the standard library. Editor Mode additionally needs Windows PowerShell/.NET and AutoShop in the same interactive desktop session. The original backend was tested with **Windows 10 / AutoShop V4.11.0.5 / Python 3.9.1**; this is not fresh-machine, Python 3.12, Claude Code or all-client acceptance.
 
 Supported: identified ST, ST-backed FB/FC, bounded project queries, limited variables/structures/global tables/instances, backups and guarded writes. Separate experimental readers inspect saved LD programs/FBs and ordinary open diagrams: networks, elements, connections, FB call pins and local variables. See [read-only ladder workflow](references/ladder-reading.md). Default scan still only identifies LD; mixed diagrams with embedded ST do not have complete live graph reading. No ladder edits, hardware configuration, PLC download/start/stop/forced IO or automatic compilation. System definitions require the user's installed XML. See [capability and evidence matrix](references/capabilities.md).
+
+### Installation details and client compatibility
+
+| Client | Project-level setup |
+| --- | --- |
+| Codex, including Codex in the ChatGPT desktop app | Place this **complete folder** at `.agents/skills/autoshop-bridge/` in your project, open a session in that project and invoke `$autoshop-bridge`. |
+| Claude Code on the local Windows machine | Place this **complete folder** at `.claude/skills/autoshop-bridge/` in your project, start Claude Code there and invoke `/autoshop-bridge`; this package has not yet been tested in Claude Code. |
+
+Keep `SKILL.md`, `backend/`, references and the manifest together. These paths are client-specific; ordinary ChatGPT/Claude web chats have no supplied local AutoShop integration in this preview. Optional user-wide locations are `~/.agents/skills/autoshop-bridge/` for current Codex and `~/.claude/skills/autoshop-bridge/` for Claude Code; installation is the user's choice, never performed by this Skill.
+
+Install a clean exported package in a new directory. A Git clone containing `.git/`, extra files or Python caches fails the strict bundle check; keep repository metadata outside the installed Skill. On failure, preserve the installation and follow [deployment diagnostics](references/environment.md#安装完整性失败); do not delete unknown files or alter the manifest to bypass verification.
+
+Codex discovers project skills from its working directory and repository ancestors, not arbitrary child projects. If discovery is missing, check the directory/layout and start a new session or restart the client. The development repository's small discovery adapter depends on this full folder and is not a standalone distribution. Client discovery rules: [Codex](https://learn.chatgpt.com/docs/build-skills), [Claude Code](https://code.claude.com/docs/en/skills). Documented installation is distinct from tested runtime compatibility.
 
 ### Package, verification and troubleshooting
 
@@ -83,36 +85,39 @@ For failure, retain the JSON error, completed stage and backup path; inspect cur
 
 Distribution model **B: portable bundled runtime**. Backend code is generated from one maintained source, not a separately evolved implementation. Customer projects, screenshots, vendor XML, private paths and development history are excluded by the export list and known-pattern checks; these checks do not guarantee semantic anonymization. Final publication review, license selection and GitHub upload remain pending. AutoShop itself and vendor materials are not included.
 
+### Version notes
+
+s12 adds existing structure member renames with associated native initializer-key updates. Source references remain under the caller’s control.
+
+Backend **1.03** · Skill **2026-10-27.s12**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
+
+s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
+
+s10 fixes stale-mirror rejection in the explicit body registration-receipt route. A locked HCP is still unreadable; the existing target is checked using the closed direct-HCP snapshot, live process/tree, all frozen files and clean editor content. Mirror differences remain advisory. Saving still invalidates the receipt. Independent-copy capture/open/read/edit/save/full-readback passed; no compilation was requested or performed in this fix.
+
+s9 fixes a conservative rejection of literal `=` in structure-member comments. Independent AutoShop V4.11.0.5 copies verified INOUT ports and structured globals through IDE saves, offline writes, full readback and zero-error compilation. Other unobserved delimiters and nonzero unknown ST row fields remain rejected; a multi-target request can still be blocked elsewhere. See [offline editing](references/offline-editing.md).
+
 ## 简体中文
 
-s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
+## **让 AI 直接读写汇川 AutoShop 工程！**
 
-**让 AI 直接读写汇川 AutoShop 工程，把 vibe coding 带入 PLC 开发，告别反复复制粘贴。**
-
-s10修复显式正文凭据路径的旧镜像误拒绝。HCP占用并未解除；使用关闭时直接快照、当前进程/树、全部冻结文件及干净目标正文共同核验，镜像差异仅作提示。保存后凭据仍失效，类型目录/变量新增/创建权限未放宽。独立副本捕获、打开、读取、修改保存和全文回读通过；本轮未编译。
-
-s9修复结构成员注释中ASCII `=`的保守误拒绝，`#`原行为保持；独立副本的INOUT端口与全局结构变量已分别经真实界面保存、离线写入、完整回读和0错误编译。其他未验分隔符、非零未知ST行字段仍拒绝；不能据此推断整批请求均可执行。详见[离线编辑](references/offline-editing.md)。
-
-让支持Skill与本机命令的AI助手，通过经过校验的脚本读取、检索和修改AutoShop工程。
-
-整理方式：AI 根据现有代码、使用说明及用户确认整理  
-当前状态：测试分发包；后台1.03，封装修订**2026-10-26.s11**；更新[离线开发](references/offline-editing.md)、FB内部结构及结构全局变量，加入[两模式明确删除](references/declaration-editing.md)与已识别FBI原件备份恢复。删除不查引用、不级联，编译单独验收；空FBI首次新增/删空仍未实现。保留梯形图只读，不发布梯形图写入或排序；新环境IDE验收待完成  
-最后更新：2026-10-26
-
-AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读完整后台源码或开发历史。
+**把 vibe coding 带入 PLC 开发，告别反复复制粘贴。**
 
 ### 一句话安装
 
-| 客户端 | 项目级安装示例 |
-| --- | --- |
-| Codex／ChatGPT桌面中的Codex | 将本目录**完整放入**项目的 `.agents/skills/autoshop-bridge/`，在该项目打开会话并输入 `$autoshop-bridge`。 |
-| 本机Windows上的Claude Code | 将本目录**完整放入**项目的 `.claude/skills/autoshop-bridge/`，在该项目启动Claude Code并输入 `/autoshop-bridge`；本包尚未在Claude Code实测。 |
+把本 Skill **完整目录**放入 Codex 项目的 `.agents/skills/autoshop-bridge/`，然后输入 `$autoshop-bridge`。
 
-SKILL.md、backend、参考文档和清单必须一起保留。上述路径分别属于对应客户端；本预览包没有提供普通ChatGPT／Claude网页聊天的本机AutoShop对接入口。可选全局安装由用户自行决定：当前Codex用户级目录是`~/.agents/skills/autoshop-bridge/`，Claude Code是`~/.claude/skills/autoshop-bridge/`，本Skill不自动安装或修改全局配置。
+### 最简单的使用方式
 
-安装时使用可信的完整干净导出包和全新目录。含`.git/`的克隆目录、额外文件或Python缓存会被严格包检查拒绝，仓库元数据不能混入运行安装目录。失败时保留原安装，按[部署排错](references/environment.md#安装完整性失败)处理，不删除未知文件或改清单绕过。
+告诉 AI 工程位置和要做的改动即可：
 
-Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下扫描子项目。未出现时先核对目录和完整布局，再开新会话或重启客户端。开发仓库的小型发现适配依赖本完整目录，不能单独复制。官方安装依据：[Codex](https://learn.chatgpt.com/docs/build-skills)、[Claude Code](https://code.claude.com/docs/en/skills)；安装路径有依据不等于本包已在该客户端验收。
+```text
+$autoshop-bridge 扫描 C:\PLC\Demo，汇总程序和变量表。
+
+用编辑器模式给指定 ST 程序加一条注释，先不要保存。
+```
+
+使用具备本机命令能力的 Windows AI 客户端，提供准确工程路径；需要落盘时明确要求保存。
 
 ### 两种编辑模式
 
@@ -132,17 +137,24 @@ Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下�
 - **离线批量处理**：用户关闭工程 → 文件读写 → 用户重开工程、核对并编译。
 - **纯分析**：优先文件查询；涉及未保存内容时读取编辑器。保护用户未保存内容，先解决基线差异再写入。
 
-### 可以这样提问
-
-1. “使用autoshop-bridge扫描这个工程，只汇总程序和变量表，先不要修改。”
-2. “使用编辑器操作模式，给指定ST程序加一条注释，先不要保存。”
-3. “只读这个梯形图FB的前两个网络、局部变量和FB调用引脚，不修改工程。”
-
 ### 依赖和能力边界
 
 需要Python3.9+，运行部分仅标准库。编辑器操作模式还需Windows PowerShell/.NET，以及同一交互桌面中已打开的AutoShop工程。原后台已验**Windows10 / AutoShop V4.11.0.5 / Python3.9.1**；不能据此宣称新电脑、Python3.12、Claude Code或全部客户端已验收。
 
 支持已识别ST、ST正文型FB/FC、有界查询、限定变量/结构/GVT/实例操作、备份与受保护写入。新增[梯形图只读](references/ladder-reading.md)：文件模式读取LD程序/FB的网络、图元、连接、FB调用引脚、局部变量及内嵌ST，编辑器可读取普通图及已物化ST控件；默认scan仍仅识别LD，完整实时混合图未实现。**不发布梯形图写入或排序**。系统定义只读且需用户本机安装XML；不做硬件配置、PLC下载/启停/强制IO或自动编译。详细范围和验证程度见[能力表](references/capabilities.md)。
+
+### 安装细节与客户端兼容性
+
+| 客户端 | 项目级安装示例 |
+| --- | --- |
+| Codex／ChatGPT桌面中的Codex | 将本目录**完整放入**项目的 `.agents/skills/autoshop-bridge/`，在该项目打开会话并输入 `$autoshop-bridge`。 |
+| 本机Windows上的Claude Code | 将本目录**完整放入**项目的 `.claude/skills/autoshop-bridge/`，在该项目启动Claude Code并输入 `/autoshop-bridge`；本包尚未在Claude Code实测。 |
+
+SKILL.md、backend、参考文档和清单必须一起保留。上述路径分别属于对应客户端；本预览包没有提供普通ChatGPT／Claude网页聊天的本机AutoShop对接入口。可选全局安装由用户自行决定：当前Codex用户级目录是`~/.agents/skills/autoshop-bridge/`，Claude Code是`~/.claude/skills/autoshop-bridge/`，本Skill不自动安装或修改全局配置。
+
+安装时使用可信的完整干净导出包和全新目录。含`.git/`的克隆目录、额外文件或Python缓存会被严格包检查拒绝，仓库元数据不能混入运行安装目录。失败时保留原安装，按[部署排错](references/environment.md#安装完整性失败)处理，不删除未知文件或改清单绕过。
+
+Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下扫描子项目。未出现时先核对目录和完整布局，再开新会话或重启客户端。开发仓库的小型发现适配依赖本完整目录，不能单独复制。官方安装依据：[Codex](https://learn.chatgpt.com/docs/build-skills)、[Claude Code](https://code.claude.com/docs/en/skills)；安装路径有依据不等于本包已在该客户端验收。
 
 ### 目录、验收与排错
 
@@ -167,3 +179,16 @@ python -B "$skill/examples/offline_smoke.py" --output $out
 失败时保留错误JSON、阶段和备份位置，先检查现状，再决定重试；不要保存旧窗口或假定自动回滚，详见[环境与恢复](references/environment.md)。本包不带开发机预编译缓存，grid使用既有PowerShell固定C#兼容入口；无常驻服务/MCP或统一进度、取消接口。
 
 采用**B：可移植分发**，不依赖开发机绝对路径、客户工程或在线服务。允许清单和已知模式筛查排除真实工程、截图、厂商XML、个人路径及开发历史，但不保证发现所有语义敏感信息。最终人工发布审查、许可证选择及GitHub上传仍待办；本包不包含AutoShop本体或厂商资料。
+
+### 版本记录
+
+s12增加已有结构成员改名与必要原生初始化键同步；正文引用由调用者处理。
+
+后台 **1.03** · Skill **2026-10-27.s12**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
+
+s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
+
+s10修复显式正文凭据路径的旧镜像误拒绝。HCP占用并未解除；使用关闭时直接快照、当前进程/树、全部冻结文件及干净目标正文共同核验，镜像差异仅作提示。保存后凭据仍失效，类型目录/变量新增/创建权限未放宽。独立副本捕获、打开、读取、修改保存和全文回读通过；本轮未编译。
+
+s9修复结构成员注释中ASCII `=`的保守误拒绝，`#`原行为保持；独立副本的INOUT端口与全局结构变量已分别经真实界面保存、离线写入、完整回读和0错误编译。其他未验分隔符、非零未知ST行字段仍拒绝；不能据此推断整批请求均可执行。详见[离线编辑](references/offline-editing.md)。
+

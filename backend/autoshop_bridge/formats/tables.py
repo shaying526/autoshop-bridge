@@ -227,16 +227,22 @@ class Table:
                 field = op["field"]
                 if (
                     not isinstance(field, str)
-                    or field not in ("comment", "initial_value")
+                    or field not in ("name", "comment", "initial_value")
                     or field not in row.spans
+                    or (field == "name" and current.kind != "stru")
                 ):
                     raise BridgeError("Unsupported field for this table.")
-                before = row.comment if field == "comment" else row.initial_raw
+                before = row.name if field == "name" else row.comment if field == "comment" else row.initial_raw
                 if not isinstance(op["expected"], str) or before != op["expected"]:
                     raise BridgeError(
                         "Table field baseline differs: {}.".format(row.name)
                     )
-                validate_value(row, field, op["value"])
+                if field == "name":
+                    if not identifier(op["value"]) or any(
+                            r is not row and r.name.casefold() == op["value"].casefold() for r in current.rows):
+                        raise BridgeError("Invalid or duplicate structure member name.")
+                else:
+                    validate_value(row, field, op["value"])
                 if before == op["value"]:
                     continue
                 start, end = row.spans[field]

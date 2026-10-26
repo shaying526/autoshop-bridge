@@ -126,17 +126,13 @@ def require_new_identifier(
 def precheck_addition_names(document):
     """Apply the narrow backend guard to add operations, before IDE access.
 
-    This intentionally selects the documented reference subset using the
-    backend's conservative casefold policy. It does not scan an installation
-    or project and does not replace the caller's full schema/duplicate checks.
+    Reference-manual instruction/soft-element examples are advisory. They are
+    not automatically promoted into the current project's reserved namespace.
+    This does not replace the caller's schema/unique-target checks.
     Sets of existing declarations remain readable and editable by exact name.
     """
     if not isinstance(document, dict) or not isinstance(document.get("operations"), list):
         return
     for operation in document["operations"]:
         if isinstance(operation, dict) and operation.get("op") == "add":
-            require_new_identifier(
-                operation.get("name"),
-                instruction_names=REFERENCE_INSTRUCTIONS,
-                soft_element_names=REFERENCE_SOFT_ELEMENTS,
-            )
+            require_new_identifier(operation.get("name"))

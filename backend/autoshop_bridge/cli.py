@@ -17,6 +17,15 @@ def parser() -> argparse.ArgumentParser:
     )
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command", required=True)
+    cmd = commands.add_parser("structure-rename-plan", help="Plan member renames and associated metadata; source references are left to the caller")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--changes", required=True, dest="changes_file", type=Path)
+    cmd.add_argument("--workspace", required=True, type=Path)
+    cmd = commands.add_parser("structure-rename-apply", help="Apply a reviewed member rename plan with full backups and readback")
+    cmd.add_argument("--plan-file", required=True, type=Path)
+    cmd.add_argument("--expect-plan-sha256", required=True, dest="expected_plan_sha256")
+    cmd.add_argument("--backup-root", required=True, type=Path)
+    cmd.add_argument("--experimental", action="store_true")
     cmd = commands.add_parser("declarations-read", help="Read declaration identities and definitions without ST source")
     cmd.add_argument("native", type=Path)
     cmd.add_argument("--output", type=Path)
@@ -370,7 +379,13 @@ def main(argv=None) -> int:
     args = vars(parser().parse_args(argv))
     command = args.pop("command")
     try:
-        if command == "declarations-read":
+        if command.startswith("structure-rename-"):
+            from autoshop_bridge.workflows import structure_rename
+            if command.endswith("apply") and not args.pop("experimental"):
+                raise BridgeError("Structure rename apply requires --experimental and a closed project.")
+            result = getattr(structure_rename, command[len("structure-rename-"):])(**args)
+            result = {k:v for k,v in result.items() if k not in ("manifest", "before_hashes", "after_hashes", "backups")}
+        elif command == "declarations-read":
             from autoshop_bridge.workflows import declarations
             result = declarations.read(**args)
             if args["output"] is not None:
@@ -410,7 +425,6 @@ def main(argv=None) -> int:
         emit(failure, sys.stderr)
         return 1
     emit(result)
-    if command.startswith("offline-") and result["status"] == "partial":
+    if result["status"] == "partial":
         return 2
-    return 1 if (result["status"] == "blocked" or
-                 (command.startswith("offline-") and result["status"] == "stopped")) else 0
+    return 1 if result["status"] in {"blocked", "stopped"} else 0

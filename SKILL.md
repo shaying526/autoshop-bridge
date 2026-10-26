@@ -5,11 +5,9 @@ description: Read and modify AutoShop PLC projects using bundled scripts. Use fo
 
 # AutoShop Bridge
 
-s11补齐FC标量新增：方法二支持空表首项/第二项，方法一走offline系列，支持BOOL/INT/DINT的VAR/IN/OUT/INOUT，initial_value必须null。空表先备份并核对IDE默认首行再检查选择器；失败可能留下已知未保存行，不能重放新增。方法一不改FC正文/行表或返回类型。按需读[变量操作](references/data-editing.md)和[离线编辑](references/offline-editing.md)。
+工具是工程编辑的执行层：AI负责语法、声明、引用和业务语义，AutoShop编译检查结果。正常创建、删除、修改不要求先证明业务正确，不额外增加人工审批；身份、未保存内容、并发、格式、唯一备份及完整回读用于保证执行准确。未实现字段应如实说明并走已实现路径，不能把旧白名单当永久禁止。
 
-s10修复显式正文凭据路径将旧HCPP差异误判为真实登记变化的问题。遇`registration_stale`先按error_context区分文件/进程/树等证据，不能编辑凭据或强制解锁；HCPP始终只是可能过时的提示。保存后凭据仍失效，正常关闭并重新捕获；此修复不授权变量/类型/对象创建。按需读[离线编辑与凭据](references/offline-editing.md)。
-
-s9修复结构初值注释误拒绝。若遇 `offline_initializer_comment_unobserved`，按error_context定位目标/变量/结构成员，并读取[离线编辑](references/offline-editing.md)的字符边界；不要清空注释或改写定义绕过。ASCII `=`、`#`已验证原样保留，其他未验分隔符仍拒绝。完整请求可能有另一个目标格式限制，不据单项成功报告整批成功。
+结构成员正规改名按[改名工作流](references/structure-renaming.md)：table-check支持field=name；table-apply或structure-rename-plan/apply同步已知关联初始化成员键。正文引用由调用者另行修改，旧引用不阻断改名。
 
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
@@ -33,7 +31,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-26.s8`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-27.s12`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 

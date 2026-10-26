@@ -162,7 +162,7 @@ def check(workspace, target=None):
     except BridgeError as exc:
         reasons.append(str(exc))
         conflict = True
-    return dict(
+    response = dict(
         status="blocked" if conflict else "table_ready",
         reasons=reasons,
         target=str(target),
@@ -172,6 +172,10 @@ def check(workspace, target=None):
         candidate_sha256=sha256(result),
         autoshop_verified=False,
     )
+    if obj.kind == "stru" and any(op.get("op") == "set" and op.get("field") == "name" for op in ops):
+        response.update(execution="project_rename_batch", associated_metadata_pending=True,
+                        references_updated=False, requires_close_entire_project=True)
+    return response
 
 
 def build(workspace, output, experimental=False):
@@ -193,6 +197,9 @@ def apply(workspace, target=None, experimental=False, backup_root=None):
     if result != obj.raw and not experimental:
         raise BridgeError("Table modifications require --experimental.")
     target = target_for(manifest, target)
+    if obj.kind == "stru" and any(op.get("op") == "set" and op.get("field") == "name" for op in ops):
+        from autoshop_bridge.workflows.structure_rename import apply_table
+        return apply_table(target, manifest["native_sha256"], ops, backup_root)
     with table_context.lock_others(manifest, ops, target):
         response = replace_verified(
             target,
@@ -301,6 +308,8 @@ def editor_edit(
             "--dry-run does not open tabs; open first with table-editor-read --open."
         )
     manifest, obj, ops, result = load(workspace, editor_project=project)
+    if obj.kind == "stru" and any(op.get("op") == "set" and op.get("field") == "name" for op in ops):
+        raise BridgeError("Structure member rename is implemented by table-apply or structure-rename-plan/apply with the project closed, including associated native metadata. Editor rename has not implemented that synchronization yet.")
     context = manifest.get("editor_type_context", dict(types={}, hashes={}))
     complex_names = {op["name"] for op in ops if op["op"] == "add"
                      and op["data_type"] in context["types"]}
