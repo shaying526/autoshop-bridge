@@ -107,6 +107,16 @@ def object_create_st(**options):
     return create_st(**options)
 
 
+def object_plan(project, kind, name, source_file=None, members_file=None, pid=None, output=None, save_project=False):
+    from autoshop_bridge.windows.new_objects import plan
+    return plan(project, kind, name, source_file, members_file, pid, output, save_project)
+
+
+def object_create(plan_file, experimental=False, backup_root=None):
+    from autoshop_bridge.windows.new_objects import create
+    return create(plan_file, experimental, backup_root)
+
+
 def source_read(**options):
     from autoshop_bridge.workflows.source import source_read as run
 
@@ -167,10 +177,15 @@ def editor_open(project, program, pid=None):
     return open_program(project, program, pid)
 
 
-def editor_read(project, program, pid=None, open_if_missing=False, output=None):
+def editor_read(project, program, pid=None, open_if_missing=False, output=None,
+                registration_receipt=None):
     from autoshop_bridge.windows.session import read_program
 
-    return read_program(project, program, pid, open_if_missing, output)
+    if registration_receipt is None:
+        return read_program(project, program, pid, open_if_missing, output)
+    from autoshop_bridge.projects.registration_evidence import load_receipt
+    return read_program(project, program, pid, open_if_missing, output,
+                        registration_receipt=load_receipt(registration_receipt))
 
 
 def editor_close(project, program, pid=None):
@@ -405,6 +420,9 @@ def backup(native: Path, backup_root: Optional[Path] = None) -> dict:
     native = native_file(native)
     with target_lock(native):
         raw = native.read_bytes()
+        if native.suffix.lower() == ".fbi":
+            from autoshop_bridge.formats import instances
+            instances.parse(raw)
         saved = create_backup(native, raw, backup_root)
         assert_hash(native, sha256(raw))
     return {"status": "backed_up", "backup": str(saved), "sha256": sha256(raw)}
@@ -426,8 +444,15 @@ def restore(
     raw = regular_file(saved / "original.native").read_bytes()
     if sha256(raw) != meta.get("sha256") or len(raw) != meta.get("size"):
         raise BridgeError("Backup integrity check failed; refusing restore.")
+    destination = target or Path(meta["target_path"])
+    if ".fbi" in (destination.suffix.lower(), Path(meta["target_path"]).suffix.lower()):
+        from autoshop_bridge.formats import instances
+        if destination.suffix.lower() != ".fbi" or Path(meta["target_path"]).suffix.lower() != ".fbi":
+            raise BridgeError("FBI backup restore requires matching source and destination kinds.")
+        instances.parse(raw)
+        instances.parse(regular_file(destination).read_bytes())
     return replace_verified(
-        target or Path(meta["target_path"]),
+        destination,
         expected.lower(),
         raw,
         backup_root,
@@ -447,9 +472,16 @@ def editor_sync(
     open_if_missing=False,
     save=False,
     close_after=False,
+    registration_receipt=None,
 ) -> dict:
     """Update one validated editor buffer; AutoShop saving remains a user action."""
     from autoshop_bridge.windows.editor import assert_baseline
+
+    if registration_receipt is not None:
+        from autoshop_bridge.projects.registration_evidence import load_receipt, RegistrationEvidenceError
+        if backend is not None:
+            raise RegistrationEvidenceError("registration_scope_denied", "Injected editor backends cannot use registration receipts.")
+        registration_receipt = load_receipt(registration_receipt)
 
     if close_after and not save:
         raise BridgeError(
@@ -486,6 +518,17 @@ def editor_sync(
     opened = False
     if backend is not None:
         adapter = backend
+    elif registration_receipt is not None:
+        from autoshop_bridge.projects.registration_evidence import receipt_identity
+        from autoshop_bridge.windows.session import connect
+        binding = receipt_identity(project, program, registration_receipt, pid)
+        if Path(binding["target"]) != target:
+            raise RegistrationEvidenceError("registration_identity_mismatch", "Workspace target differs from the receipt target.")
+        adapter, registered_target, opened = connect(
+            project, program, pid, open_if_missing, registration_receipt=registration_receipt
+        )
+        if registered_target != target:
+            raise RegistrationEvidenceError("registration_identity_mismatch", "Connected target differs from the workspace.")
     else:
         from autoshop_bridge.windows.session import WindowsSession, resolve_target
 
@@ -523,6 +566,8 @@ def editor_sync(
         baseline_line_count=container.line_count,
         line_count_changed=source.count(b"\n") + 1 != container.line_count,
     )
+    if registration_receipt is not None:
+        base["registration_evidence"] = adapter.registration_evidence
     if dry_run:
         return dict(base, status="editor_ready", native_sha256=sha256(original))
     if not edited:
@@ -548,6 +593,8 @@ def editor_sync(
         # All backup files must be durable before changing the editor buffer.
         assert_hash(target, manifest["native_sha256"])
         assert_baseline(adapter.read(), container.source)
+        if registration_receipt is not None:
+            adapter.registration_observer.mutation_guard(adapter)
         try:
             adapter.write(source)
             after = adapter.read()

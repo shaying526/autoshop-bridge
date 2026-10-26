@@ -17,6 +17,38 @@ def parser() -> argparse.ArgumentParser:
     )
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command", required=True)
+    cmd = commands.add_parser("declarations-read", help="Read declaration identities and definitions without ST source")
+    cmd.add_argument("native", type=Path)
+    cmd.add_argument("--output", type=Path)
+    cmd = commands.add_parser("editor-declarations-delete", help="Explicit experimental declaration deletion through AutoShop")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--object", required=True, dest="program")
+    cmd.add_argument("--kind", required=True, choices=("fb", "fc", "stru", "gvt", "fbi"))
+    cmd.add_argument("--changes", required=True, type=Path)
+    cmd.add_argument("--expect-sha256", required=True, dest="expected_sha256")
+    cmd.add_argument("--pid", type=int)
+    cmd.add_argument("--open", dest="open_if_missing", action="store_true")
+    cmd.add_argument("--save", action="store_true")
+    cmd.add_argument("--backup-root", type=Path)
+    cmd.add_argument("--experimental", action="store_true")
+    cmd.add_argument("--dry-run", action="store_true")
+    cmd = commands.add_parser("offline-export", help="Freeze direct-HCP project baseline into an external workspace")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--workspace", required=True, type=Path)
+    for name in ("offline-check", "offline-build"):
+        cmd = commands.add_parser(name, help="Qualify existing registered offline targets" if name.endswith("check") else "Build hash-bound offline project candidates")
+        cmd.add_argument("--workspace", required=True, type=Path)
+        cmd.add_argument("--changes", required=True, type=Path)
+    cmd = commands.add_parser("offline-apply", help="Apply an exact offline plan while holding exclusive HCP access")
+    cmd.add_argument("--plan-file", required=True, type=Path)
+    cmd.add_argument("--expect-plan-sha256", dest="expected_plan_sha256", required=True)
+    cmd.add_argument("--backup-root", required=True, type=Path)
+    cmd.add_argument("--experimental", action="store_true")
+    cmd = commands.add_parser("offline-restore", help="Explicitly restore a retained offline batch after fresh backups")
+    cmd.add_argument("--receipt-file", required=True, type=Path)
+    cmd.add_argument("--expect-receipt-sha256", dest="expected_receipt_sha256", required=True)
+    cmd.add_argument("--backup-root", required=True, type=Path)
+    cmd.add_argument("--experimental", action="store_true")
     cmd = commands.add_parser("system-variables-read", help="Read vendor system definitions for registered system tables")
     cmd.add_argument("--project", required=True, type=Path)
     cmd.add_argument("--definitions-dir", required=True, type=Path)
@@ -67,6 +99,19 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument("--backup-root", type=Path)
     cmd.add_argument("--experimental", action="store_true")
     cmd.add_argument("--dry-run", action="store_true")
+    cmd = commands.add_parser('object-plan', help='Plan normal IDE creation of a LiteST FB or structure')
+    cmd.add_argument('--project', required=True, type=Path)
+    cmd.add_argument('--kind', required=True, choices=('litest-fb', 'structure'))
+    cmd.add_argument('--name', required=True)
+    cmd.add_argument('--source-file', type=Path, help='UTF-8 initial FB body; required for litest-fb')
+    cmd.add_argument('--members-file', type=Path, help='JSON list of initial BOOL/INT/DINT members; required for structure')
+    cmd.add_argument('--save-project', action='store_true', help='Explicitly save project registration after this new object; rejects dirty documents')
+    cmd.add_argument('--pid', type=int)
+    cmd.add_argument('--output', type=Path, help='New plan JSON path outside the native project')
+    cmd = commands.add_parser('object-create', help='Execute an exact clean-project object creation plan using AutoShop')
+    cmd.add_argument('--plan-file', required=True, type=Path)
+    cmd.add_argument('--backup-root', type=Path)
+    cmd.add_argument('--experimental', action='store_true')
     cmd = commands.add_parser(
         "build-baseline",
         help="Capture project hashes before user-triggered compilation",
@@ -213,6 +258,12 @@ def parser() -> argparse.ArgumentParser:
         if name == "editor-read":
             cmd.add_argument("--open", dest="open_if_missing", action="store_true")
             cmd.add_argument("--output", type=Path)
+            cmd.add_argument("--registration-receipt", type=Path)
+    cmd = commands.add_parser("registration-capture", help="Experimental direct-HCP receipt; target project must already be closed")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--program", required=True)
+    cmd.add_argument("--pid", type=int)
+    cmd.add_argument("--output", required=True, type=Path)
     cmd = commands.add_parser(
         "editor-save", help="Save exact captured editor snapshot, with backup/readback"
     )
@@ -281,6 +332,7 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument("--open", dest="open_if_missing", action="store_true")
     cmd.add_argument("--save", action="store_true")
     cmd.add_argument("--close", dest="close_after", action="store_true")
+    cmd.add_argument("--registration-receipt", type=Path)
     return root
 
 
@@ -289,13 +341,76 @@ def emit(value: dict, stream=None) -> None:
     print(json.dumps(value, ensure_ascii=True), file=stream or sys.stdout)
 
 
+def _offline_command(command, args):
+    """Developer CLI only; complete batch receipts remain in backup JSON files."""
+    from autoshop_bridge.workflows import offline
+
+    args = dict(args)
+    if command in {"offline-apply", "offline-restore"}:
+        if not args.pop("experimental"):
+            raise BridgeError("Offline apply/restore requires --experimental and a closed target project.")
+    if "changes" in args:
+        args["changes_file"] = args.pop("changes")
+    result = getattr(offline, command[len("offline-"):])(**args)
+    summary = {key: result[key] for key in (
+        "status", "workspace", "manifest", "protected_files", "registration_source",
+        "excluded_nonfile_registration_count", "declared_missing_count",
+        "plan", "plan_sha256", "receipt", "receipt_sha256", "backup_run", "validation", "qualification", "error", "error_code", "error_context",
+        "deletion_preflight_scope", "reference_check", "compile_pending", "cascade",
+    ) if key in result}
+    if isinstance(summary.get("manifest"), dict):
+        del summary["manifest"]
+    for key in ("written", "attempted", "backups", "targets"):
+        if key in result:
+            summary[key + "_count"] = len(result[key])
+    return summary
+
+
 def main(argv=None) -> int:
     args = vars(parser().parse_args(argv))
     command = args.pop("command")
     try:
-        result = getattr(service, command.replace("-", "_"))(**args)
+        if command == "declarations-read":
+            from autoshop_bridge.workflows import declarations
+            result = declarations.read(**args)
+            if args["output"] is not None:
+                result = {key: result[key] for key in (
+                    "status", "kind", "declcount", "native_sha256", "read_only")}
+                result["output"] = str(args["output"].resolve())
+        elif command == "editor-declarations-delete":
+            from autoshop_bridge.workflows import declarations
+            experimental = args.pop("experimental")
+            if not args["dry_run"] and not experimental:
+                raise BridgeError("Declaration deletion requires --experimental before connecting or writing.")
+            declarations.validate_hash(args["expected_sha256"])
+            args["document"] = declarations.read_changes(args.pop("changes"))
+            if args["dry_run"]:
+                args["open_if_missing"] = False
+            from autoshop_bridge.windows.declaration_edit import edit
+            result = edit(**args)
+        elif command == "registration-capture":
+            from autoshop_bridge.windows.registration_observer import capture_registration
+            result = capture_registration(**args)
+        else:
+            result = (_offline_command(command, args) if command.startswith("offline-")
+                      else getattr(service, command.replace("-", "_"))(**args))
     except (BridgeError, OSError) as exc:
-        emit({"status": "error", "error": str(exc)}, sys.stderr)
+        failure = {"status": "error", "error": str(exc)}
+        if command.startswith("offline-"):
+            from autoshop_bridge.projects.offline_guard import error_code
+            failure["error_code"] = error_code(exc)
+            if getattr(exc, "context", None) is not None:
+                failure["error_context"] = dict(exc.context)
+            if getattr(exc, "requires_close_entire_project", False):
+                failure["requires_close_entire_project"] = True
+        elif getattr(exc, "code", None):
+            failure["error_code"] = exc.code
+            if getattr(exc, "context", None):
+                failure["error_context"] = dict(exc.context)
+        emit(failure, sys.stderr)
         return 1
     emit(result)
-    return 1 if result["status"] == "blocked" else 0
+    if command.startswith("offline-") and result["status"] == "partial":
+        return 2
+    return 1 if (result["status"] == "blocked" or
+                 (command.startswith("offline-") and result["status"] == "stopped")) else 0

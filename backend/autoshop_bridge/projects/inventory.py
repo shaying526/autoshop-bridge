@@ -42,7 +42,9 @@ def member_path(name):
     return value.parts
 
 
-def _mirror_contents(raw, *, allow_readonly_tail=False):
+def _mirror_contents(raw, *, allow_readonly_tail=False, allow_opaque_header=False):
+    if allow_opaque_header and not allow_readonly_tail:
+        raise BridgeError("Opaque HCPP headers require the read-only evidence policy.")
     if len(raw) > MAX_NATIVE_SIZE:
         raise BridgeError("HCPP input exceeds 16 MiB.")
     if len(raw) < 40 or raw[:4] != b"PPCH":
@@ -51,7 +53,9 @@ def _mirror_contents(raw, *, allow_readonly_tail=False):
     compressed_length = struct.unpack_from("<I", raw, 10)[0]
     count = struct.unpack_from("<I", raw, 32)[0]
     # Sample-supported profile, not a complete vendor format specification.
-    if raw[4:6] != b"\x00\x03" or raw[14:32] != bytes(18):
+    if raw[4:6] != b"\x00\x03" or (
+        not allow_opaque_header and raw[14:32] != bytes(18)
+    ):
         raise BridgeError("Unsupported HCPP header profile.")
     if not 1 <= expected <= MAX_NATIVE_SIZE or not 1 <= count <= 10000:
         raise BridgeError("Unsupported HCPP length/count.")
@@ -124,6 +128,32 @@ def _mirror_contents(raw, *, allow_readonly_tail=False):
 
 def unpack_mirror(raw, *, allow_readonly_tail=False):
     return _mirror_contents(raw, allow_readonly_tail=allow_readonly_tail)[0]
+
+
+def unpack_mirror_evidence(raw):
+    """Extract bounded member evidence without establishing format or write trust.
+
+    Bytes 14:32 and the four-byte member suffix remain opaque. Their hashes
+    identify observations only; neither archive integrity nor member identity
+    proves that the embedded registration reflects the current project.
+    """
+    members, validation = _mirror_contents(
+        raw, allow_readonly_tail=True, allow_opaque_header=True
+    )
+    header = raw[14:32]
+    tail = bytes.fromhex(validation["member_tail_hex"])
+    validation.update(
+        profile="ppch-0003-opaque-header-bounded-members-evidence-v1",
+        opaque_header_hex=header.hex(),
+        opaque_header_sha256=sha256(header),
+        opaque_header_semantics="unknown",
+        strict_header_accepted=(header == bytes(18)),
+        member_tail_sha256=sha256(tail),
+        registration_freshness="unproven",
+        possibly_stale=True,
+        mutation_authorized=False,
+    )
+    return members, validation
 
 
 def _shared_read(path):
@@ -378,7 +408,7 @@ def scan(project, *, allow_readonly_tail=False):
             "Disk snapshot; unsaved editor changes are not included.",
             "HCPP registration may be stale; bodies and variables use current native files.",
             "Unsupported table layouts are reported individually; unknown metadata and type codes remain raw.",
-            "FC, hardware, serial, EtherCAT and axis configuration are pending.",
+            "FC return types/new objects, FCI, hardware, serial, EtherCAT and axis configuration remain limited or pending.",
             "LD programs and observed LD function blocks are identified only; ladder parsing/editing is not implemented.",
         ],
     }

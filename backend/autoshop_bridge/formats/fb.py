@@ -112,7 +112,7 @@ class FBContainer:
             "read_only": True,
             "program_name": self.program_name,
             "notes": [
-                "Only source.st is editable; variable write-back is unsupported.",
+                "This variable snapshot is read-only; use dedicated offline/editor variable workflows for supported edits.",
                 "display_order is not a decoded persistent AutoShop ID.",
                 "Retention fields are not decoded; initial values may contain control codes.",
                 "Referenced structure/FB type definitions are separate files.",

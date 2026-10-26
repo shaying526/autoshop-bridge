@@ -95,6 +95,27 @@ public static class BridgeAccessibility {
   if(n.Role==36 && n.Name==program)found.Add(n);
   foreach(Node c in n.Children())TreeFind(c,program,found,depth+1,ref count);
  }
+ static void CollectTreeNames(Node n,List<string> names,int depth,ref int count){
+  if(depth>32 || ++count>10000)throw new Exception("Project tree exceeds bounds");
+  if(n.Role==36)names.Add(n.Name);
+  foreach(Node c in n.Children())CollectTreeNames(c,names,depth+1,ref count);
+ }
+ static void InventoryTreeItems(IntPtr target,Node root,UIntPtr item,UIntPtr parentItem,int parent,int depth,List<object> nodes,HashSet<ulong> seen){
+  while(item!=UIntPtr.Zero){
+   if(depth>32 || nodes.Count>=10000 || !seen.Add(item.ToUInt64()))throw new Exception("Project tree traversal exceeds bounds or repeats an item");
+   IntPtr handle=new IntPtr(unchecked((long)item.ToUInt64()));
+   if(Message(target,0x110a,new UIntPtr(3),handle)!=parentItem)throw new Exception("Project tree parent changed during traversal");
+   UIntPtr mapped=Message(target,0x112b,item,IntPtr.Zero);ulong id=mapped.ToUInt64();
+   if(id==0 || id>Int32.MaxValue)throw new Exception("Project tree accessibility mapping is unavailable");
+   Node node=new Node(root.Object,(int)id);int role=node.Role;
+   if(role!=36)throw new Exception("Project tree item has an unsupported accessibility role");
+   int index=nodes.Count;
+   nodes.Add(new Dictionary<string,object>{{"index",index},{"parent",parent},{"depth",depth},{"name",node.Name},{"role",role},{"state",node.State},{"accessibility_id",(int)id}});
+   UIntPtr child=Message(target,0x110a,new UIntPtr(4),handle);
+   InventoryTreeItems(target,root,child,item,index,depth+1,nodes,seen);
+   item=Message(target,0x110a,new UIntPtr(1),handle);
+  }
+ }
  static void Click(IntPtr target,Node cell,bool twice){
   int x,y,w,h;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);
   if(w<=2 || h<=2 || (cell.State&0x18000)!=0)throw new Exception("Target node/cell is offscreen; reveal it first");
@@ -170,7 +191,8 @@ public static class BridgeAccessibility {
   throw new Exception("Requested cell is not actually selected before timeout");
  }
  public static object Run(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
-  IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);bool tree=action=="open" || action=="tree_context";
+  IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);bool keyboardContext=action=="tree_context_keyboard";
+  bool tree=action=="open" || action=="tree_context" || keyboardContext || action=="tree_nodes" || action=="tree_inventory";
   Validate(main,target,pid,project,program,tree);Node root=Root(target);
   if(action=="grid_columns"){
    var columns=new List<string>();
@@ -185,16 +207,44 @@ public static class BridgeAccessibility {
    object result=action=="grid"?BridgeGridReader.Read(new GridSource(root)):BridgeGridReader.ReadDisplayed(new GridSource(root));
    Validate(main,target,pid,project,program,false);return result;
   }
-  if(action=="open" || action=="tree_context"){
-   if(action=="tree_context" && program!="程序块" && program!="功能块" && program!="数据类型" && program!="全局变量表")throw new Exception("Unsupported creation category");
+  if(action=="tree_nodes"){
+   var names=new List<string>();int count=0;CollectTreeNames(root,names,0,ref count);return names;
+  }
+  if(action=="tree_inventory"){
+   ulong before=Message(target,0x1105,UIntPtr.Zero,IntPtr.Zero).ToUInt64();
+   if(before>10000)throw new Exception("Project tree item count exceeds bounds");
+   var nodes=new List<object>();var seen=new HashSet<ulong>();
+   InventoryTreeItems(target,root,Message(target,0x110a,UIntPtr.Zero,IntPtr.Zero),UIntPtr.Zero,-1,0,nodes,seen);
+   Validate(main,target,pid,project,program,true);
+   ulong after=Message(target,0x1105,UIntPtr.Zero,IntPtr.Zero).ToUInt64();
+   if(before!=after || before!=(ulong)nodes.Count)throw new Exception("Project tree enumeration is incomplete or changed");
+   return new Dictionary<string,object>{{"profile","native-tree-items-msaa-v1"},{"complete",true},{"node_count",nodes.Count},{"tree_count_before",before},{"tree_count_after",after},{"includes_collapsed_items",true},{"atomic_snapshot",false},{"nodes",nodes}};
+  }
+  if(action=="open" || action=="tree_context" || keyboardContext){
+   if((action=="tree_context" || keyboardContext) && program!="程序块" && program!="功能块" && program!="数据类型" && program!="全局变量表" && program!="功能块(FB)" && program!="结构体" && program!="软元件表" && program!="功能块实例")throw new Exception("Unsupported creation category");
    List<Node> found=new List<Node>();int count=0;TreeFind(root,program,found,0,ref count);
    if(found.Count!=1)throw new Exception("Expected one exact program tree node; found "+found.Count);
    if((int)found[0].Id<=0)throw new Exception("Unsupported tree item identity");
    UIntPtr item=Message(target,0x112a,new UIntPtr((uint)(int)found[0].Id),IntPtr.Zero);
    if(item==UIntPtr.Zero)throw new Exception("Cannot map tree item identity");
    Message(target,0x1114,UIntPtr.Zero,new IntPtr(unchecked((long)item.ToUInt64())));
-   Message(target,0x110b,new UIntPtr(9),new IntPtr(unchecked((long)item.ToUInt64())));
+   UIntPtr selected=Message(target,0x110b,new UIntPtr(9),new IntPtr(unchecked((long)item.ToUInt64())));
    Validate(main,target,pid,project,program,true);
+   if(keyboardContext){
+    // Selection can be vetoed by TVN_SELCHANGING. Prove the current caret
+    // and fresh MSAA identity before requesting a keyboard context menu.
+    if(selected==UIntPtr.Zero)throw new Exception("Creation category selection was rejected");
+    if(Message(target,0x110a,new UIntPtr(9),IntPtr.Zero)!=item)throw new Exception("Creation category caret differs");
+    UIntPtr accessibleId=Message(target,0x112b,item,IntPtr.Zero);
+    ulong id=accessibleId.ToUInt64();
+    if(id==0 || id>Int32.MaxValue || id!=(uint)(int)found[0].Id)throw new Exception("Creation category accessibility identity changed");
+    Node fresh=new Node(Root(target).Object,(int)id);
+    if(fresh.Name!=program || (fresh.State&2)==0)throw new Exception("Creation category name/selection readback differs");
+    Validate(main,target,pid,project,program,true);
+    if(Message(target,0x110a,new UIntPtr(9),IntPtr.Zero)!=item)throw new Exception("Creation category caret changed before context request");
+    if(!PostMessage(target,0x007b,new UIntPtr(unchecked((ulong)target.ToInt64())),new IntPtr(-1)))throw new Exception("Keyboard category context request failed");
+    return "context_posted";
+   }
    if(action=="open"){Click(target,found[0],true);return "open_posted";}
    int x,y,w,h;found[0].Object.accLocation(out x,out y,out w,out h,found[0].Id);
    if(w<=2 || h<=2 || (found[0].State&0x18000)!=0)throw new Exception("Creation category is offscreen");

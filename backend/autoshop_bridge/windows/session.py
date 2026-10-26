@@ -38,7 +38,11 @@ FC_COLUMNS = {key: value for key, value in COLUMNS.items()
               if key not in ("initial_raw", "initial_value", "retention")}
 
 
-def resolve_target(project, program):
+def resolve_target(project, program, *, registration_receipt=None, live_observation=None):
+    if registration_receipt is not None:
+        from autoshop_bridge.projects.registration_evidence import verify_target_receipt
+        verified = verify_target_receipt(project, program, registration_receipt, live_observation)
+        return Path(verified["project"]), Path(verified["target"])
     inventory = scan(project)
     matches = [
         item
@@ -444,11 +448,24 @@ def snapshot(adapter, target):
     return result
 
 
-def connect(project, program, pid=None, open_if_missing=False):
-    directory, target = resolve_target(project, program)
-    adapter = WindowsSession(directory, program, pid)
+def connect(project, program, pid=None, open_if_missing=False, *,
+            registration_receipt=None, live_observer=None):
+    if registration_receipt is None:
+        directory, target = resolve_target(project, program)
+        adapter = WindowsSession(directory, program, pid)
+    else:
+        from autoshop_bridge.projects.registration_evidence import receipt_identity
+        from autoshop_bridge.windows.registration_observer import RegistrationObserver
+        binding = receipt_identity(project, program, registration_receipt, pid)
+        directory, target = Path(binding["project"]), Path(binding["target"])
+        adapter = WindowsSession(directory, program, binding["pid"])
+        live_observer = live_observer or RegistrationObserver(registration_receipt)
+        live_observer.navigation_guard(adapter)
     adapter.columns = FC_COLUMNS if target.suffix.lower() == ".fc" else COLUMNS
     opened = adapter.ensure_open(open_if_missing)
+    if registration_receipt is not None:
+        adapter.registration_evidence = live_observer.verify(adapter)
+        adapter.registration_observer = live_observer
     return adapter, target, opened
 
 
@@ -464,13 +481,20 @@ def open_program(project, program, pid=None):
     )
 
 
-def read_program(project, program, pid=None, open_if_missing=False, output=None):
-    adapter, target, opened = connect(project, program, pid, open_if_missing)
+def read_program(project, program, pid=None, open_if_missing=False, output=None,
+                 registration_receipt=None):
+    if registration_receipt is None:
+        adapter, target, opened = connect(project, program, pid, open_if_missing)
+    else:
+        adapter, target, opened = connect(project, program, pid, open_if_missing,
+                                          registration_receipt=registration_receipt)
     value = snapshot(adapter, target)
     value.update(status="editor_read", opened=opened)
+    if registration_receipt is not None:
+        value["registration_evidence"] = adapter.registration_evidence
     if output is not None:
         write_json_new(output, value)
-        return {
+        result = {
             "status": "editor_read",
             "output": str(output.resolve()),
             "program": program,
@@ -478,6 +502,9 @@ def read_program(project, program, pid=None, open_if_missing=False, output=None)
             "variable_count": len(value["variables"] or []),
             "opened": opened,
         }
+        if registration_receipt is not None:
+            result["registration_evidence"] = value["registration_evidence"]
+        return result
     return value
 
 

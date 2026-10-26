@@ -11,9 +11,25 @@ from autoshop_bridge.formats.fb import Reader
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.storage import sha256
 from autoshop_bridge.formats.tables import unicode_string
+from autoshop_bridge.formats.empty_table import instance_segment as empty_segment
 
 PROFILE = "autoshop-fbi-instance-segment-v1-read-only"
 MAGIC = b"AutoShop"
+EMPTY_PROFILE = "autoshop-fbi-empty-tables-v1-read-only"
+
+
+def _document(raw, start, end, rows, profile=PROFILE):
+    return dict(
+        schema=1, read_only=True, profile=profile, coverage="instance_segment_only",
+        instance_count=len(rows), instances=rows, record_segment_offset=start,
+        record_segment_bytes=end-start, opaque_prefix_bytes=start,
+        opaque_prefix_sha256=sha256(raw[:start]), opaque_suffix_bytes=len(raw)-end,
+        opaque_suffix_sha256=sha256(raw[end:]), limitations=[
+            "Only the uniquely bounded instance-record segment is parsed.",
+            "Surrounding archive metadata and nested initializer syntax remain opaque.",
+            "No native instance-table serializer, registration or allocation is implemented.",
+        ],
+    )
 
 
 def qualified_name(value):
@@ -32,6 +48,9 @@ def parse(raw):
     ):
         raise BridgeError("Unsupported FBI header/size.")
     candidates = []
+    empty = empty_segment(raw)
+    if empty is not None:
+        candidates.append(_document(raw, empty[0], empty[1], [], EMPTY_PROFILE))
     # Discover the count/record sequence near the front, not a project offset.
     for start in range(8, min(len(raw) - 11, 4096)):
         count = struct.unpack_from("<I", raw, start)[0]
@@ -82,27 +101,7 @@ def parse(raw):
             # It is not decoded or used to infer more declarations.
             if not raw[reader.pos :].startswith(MAGIC):
                 continue
-            candidates.append(
-                dict(
-                    schema=1,
-                    read_only=True,
-                    profile=PROFILE,
-                    coverage="instance_segment_only",
-                    instance_count=len(rows),
-                    instances=rows,
-                    record_segment_offset=start,
-                    record_segment_bytes=reader.pos - start,
-                    opaque_prefix_bytes=start,
-                    opaque_prefix_sha256=sha256(raw[:start]),
-                    opaque_suffix_bytes=len(raw) - reader.pos,
-                    opaque_suffix_sha256=sha256(raw[reader.pos :]),
-                    limitations=[
-                        "Only the uniquely bounded instance-record segment is parsed.",
-                        "Surrounding archive metadata and nested initializer syntax remain opaque.",
-                        "No instance-table writing, registration or allocation is implemented.",
-                    ],
-                )
-            )
+            candidates.append(_document(raw, start, reader.pos, rows))
         except BridgeError:
             continue
     if len(candidates) != 1:

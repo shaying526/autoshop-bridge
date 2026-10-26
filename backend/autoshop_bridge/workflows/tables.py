@@ -1,6 +1,7 @@
 """Table workspaces and both file/editor routes, sharing one validated change plan."""
 
 import copy
+from contextlib import ExitStack
 from pathlib import Path
 
 from autoshop_bridge import __version__
@@ -21,6 +22,8 @@ from autoshop_bridge.storage import (
 )
 from autoshop_bridge.formats.tables import parse, comment_display
 from autoshop_bridge.projects import tables as table_context
+from autoshop_bridge.projects import types as type_context
+from autoshop_bridge.projects.identifiers import precheck_addition_names
 
 PROFILE = "autoshop-native-tables-v1-experimental"
 
@@ -57,11 +60,12 @@ def export(native, workspace):
     )
 
 
-def load(workspace):
+def load(workspace, *, editor_project=None):
     workspace = workspace.resolve(strict=True)
     manifest = read_json(regular_file(workspace / "manifest.json"))
     if (
-        manifest.get("schema") != 1
+        not isinstance(manifest, dict)
+        or manifest.get("schema") != 1
         or manifest.get("profile") != PROFILE
         or manifest.get("kind") not in ("stru", "gvt")
         or not isinstance(manifest.get("native_path"), str)
@@ -75,10 +79,69 @@ def load(workspace):
     if read_json(regular_file(workspace / "table.json")) != obj.document():
         raise BridgeError("table.json is read-only; edit changes.json instead.")
     changes = read_json(regular_file(workspace / "changes.json"))
-    if set(changes) != {"schema", "operations"} or changes.get("schema") != 1:
+    if not isinstance(changes, dict) or set(changes) != {"schema", "operations"} or changes.get("schema") != 1:
         raise BridgeError("Table changes require schema=1 and operations.")
-    result = obj.rebuild(changes["operations"])
+    operations = changes["operations"]
+    if not isinstance(operations, list) or len(operations) > 32:
+        raise BridgeError("Expected a list of at most 32 explicit table operations.")
+    for op in operations:
+        if not isinstance(op, dict):
+            raise BridgeError("Table operation must be an object.")
+        if not isinstance(op.get("op"), str):
+            raise BridgeError("Table operation requires a string op.")
+        if op["op"] == "add":
+            fields = {"op", "name", "data_type", "comment"}
+            if obj.kind == "gvt":
+                fields.add("initial_value")
+            if set(op) != fields or not isinstance(op.get("data_type"), str) or not op["data_type"]:
+                raise BridgeError("Table addition requires exact declaration fields and a string data_type.")
+    precheck_addition_names(changes)
+    named = [op["data_type"] for op in operations
+             if isinstance(op, dict) and op.get("op") == "add"
+             and op.get("data_type") not in ("BOOL", "INT", "DINT")]
+    if editor_project is not None and obj.kind == "gvt" and named:
+        from autoshop_bridge.formats.offline_globals import rebuild
+        context = type_context.catalog(editor_project, named)
+        if any(context["types"][name]["code"] != 64 for name in named):
+            raise BridgeError("Global table editor additions require project structures.")
+        type_context.check(context)
+        definitions = {name: regular_file(Path(context["types"][name]["path"])).read_bytes()
+                       for name in named}
+        result = rebuild(raw, operations, definitions)
+        type_context.check(context)
+        manifest["editor_type_context"] = context
+    else:
+        result = obj.rebuild(operations)
     return manifest, obj, changes["operations"], result
+
+
+def _instance_namespace(target):
+    from autoshop_bridge.formats import instances
+    from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
+    result, names = {}, set()
+    for path in sorted(target.parent.iterdir()):
+        if path.suffix.lower() == ".fbi":
+            path = regular_file(path)
+            if path.stat().st_nlink > 1:
+                raise BridgeError("Multiple hard links are unsupported for FBI namespace dependencies.")
+            with path.open("rb") as stream:
+                raw = stream.read(MAX_NATIVE_SIZE + 1)
+            if len(raw) > MAX_NATIVE_SIZE:
+                raise BridgeError("FBI namespace dependency exceeds the native size limit.")
+            result[str(path)] = sha256(raw)
+            names.update(row["name"].casefold() for row in instances.parse(raw)["instances"])
+    return result, names
+
+
+def _assert_editor_saved(candidate, after, complex_names):
+    """Only new complex IDE defaults/address allocation are intentionally opaque."""
+    expected, actual = semantic_document(candidate), semantic_document(after)
+    for left, right in zip(expected["rows"], actual["rows"]):
+        if left["name"] in complex_names:
+            right["initial_value_raw"] = left["initial_value_raw"]
+            right["uninterpreted_metadata"]["address_raw"] = left["uninterpreted_metadata"]["address_raw"]
+    if expected != actual:
+        raise BridgeError("Saved table metadata or non-target fields differ from candidate.")
 
 
 def target_for(manifest, target=None):
@@ -237,11 +300,25 @@ def editor_edit(
         raise BridgeError(
             "--dry-run does not open tabs; open first with table-editor-read --open."
         )
-    manifest, obj, ops, result = load(workspace)
+    manifest, obj, ops, result = load(workspace, editor_project=project)
+    context = manifest.get("editor_type_context", dict(types={}, hashes={}))
+    complex_names = {op["name"] for op in ops if op["op"] == "add"
+                     and op["data_type"] in context["types"]}
     edited = obj.raw != result
     if edited and not experimental and not dry_run:
         raise BridgeError("Table editor modifications require --experimental.")
     target = target_for(manifest)
+    namespace_enabled = obj.kind == "gvt" and any(op["op"] == "add" for op in ops)
+    instance_hashes, instance_names = _instance_namespace(target) if namespace_enabled else ({}, set())
+    if any(op["op"] == "add" and op["name"].casefold() in instance_names for op in ops):
+        raise BridgeError("Global variable name conflicts with an FBI instance.")
+
+    def dependencies():
+        type_context.check(context)
+        if namespace_enabled and _instance_namespace(target)[0] != instance_hashes:
+            raise BridgeError("Global FBI namespace changed during editor operation.")
+
+    dependencies()
     if save:
         writable_target(target)
     if backend is None:
@@ -250,12 +327,27 @@ def editor_edit(
             raise BridgeError("Workspace target differs from the registered table.")
     else:
         adapter, opened = backend, False
-    with table_context.lock_others(manifest, ops, target), target_lock(target):
+    with ExitStack() as locks:
+        locks.enter_context(table_context.lock_others(manifest, ops, target))
+        for path in sorted(instance_hashes):
+            locks.enter_context(target_lock(Path(path)))
+        locks.enter_context(target_lock(target))
         raw = assert_hash(target, manifest["native_sha256"])
         before = adapter.grid()
         if adapter.dirty():
             raise BridgeError("Table editor has unsaved changes.")
         assert_native_table(obj, before)
+        dependencies()
+        if complex_names:
+            probe = next((r for r in before if r["data_type"] in ("BOOL", "INT", "DINT")), None)
+            if probe is None:
+                raise BridgeError("Complex GVT additions require an existing scalar selector probe.")
+            choices = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
+            requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in complex_names}
+            if any(choices.count(name) != 1 for name in requested_types):
+                raise BridgeError("Requested project structure is unavailable or ambiguous in the IDE selector.")
+            if adapter.grid() != before or adapter.dirty():
+                raise BridgeError("Table changed during type selector preflight.")
         if dry_run:
             return dict(
                 status="table_editor_ready", row_count=len(before), edited=edited
@@ -274,10 +366,12 @@ def editor_edit(
         write_json_new(
             saved / "table_editor_changes.json", dict(schema=1, operations=ops)
         )
+        write_json_new(saved / "table_editor_dependencies.json", dict(types=context, instances=instance_hashes))
         if adapter.dirty() or adapter.grid() != before:
             raise BridgeError("Table editor changed during backup.")
         assert_hash(target, manifest["native_sha256"])
         table_context.validate(manifest, ops, target)
+        dependencies()
         current = copy.deepcopy(before)
         try:
             for op in ops:
@@ -306,10 +400,11 @@ def editor_edit(
                     if actual != desired:
                         raise BridgeError("Full table readback differs after edit.")
                 else:
-                    desired = add_row(adapter, current, op, obj.kind)
+                    desired = add_row(adapter, current, op, obj.kind, complex_type=op["name"] in complex_names)
                 current = desired
                 assert_hash(target, manifest["native_sha256"])
                 table_context.validate(manifest, ops, target)
+                dependencies()
             if adapter.grid() != current or not adapter.dirty():
                 raise BridgeError("Table final readback/dirty state differs.")
             candidate = parse(result, obj.kind)
@@ -330,22 +425,23 @@ def editor_edit(
             if save:
                 assert_hash(target, manifest["native_sha256"])
                 table_context.validate(manifest, ops, target)
+                dependencies()
                 adapter.save()
                 after_raw = target.read_bytes()
                 after = parse(after_raw, obj.kind)
                 if adapter.dirty() or adapter.grid() != current:
                     raise BridgeError("Table view changed during save.")
                 assert_native_table(after, current)
-                if semantic_document(after) != semantic_document(candidate):
-                    raise BridgeError(
-                        "Saved table metadata or non-target fields differ from candidate."
-                    )
+                _assert_editor_saved(candidate, after, complex_names)
+                dependencies()
                 table_context.validate(manifest, ops, target, include_target=False)
                 response.update(
                     status="table_editor_saved",
                     requires_manual_save=False,
                     sha256=sha256(after_raw),
                 )
+                if complex_names:
+                    response["complex_initialization"] = dict(scope="IDE defaults; hidden preview is independent from native initializer", native=[r.document() for r in after.rows if r.name in complex_names], editor=[r for r in current if r["name"] in complex_names])
                 if close_after:
                     adapter.close()
                     response["status"] = "table_editor_saved_closed"

@@ -93,7 +93,7 @@ def assert_native_table(obj, rows):
                 raise BridgeError("Table editor/native allocation address differs.")
 
 
-def add_row(adapter, before, op, kind):
+def add_row(adapter, before, op, kind, complex_type=False):
     """Append via the IDE, verify observed defaults and every committed field."""
     actual = adapter.set_cell("#row:" + str(len(before) + 1), "name", "", op["name"])
     if len(actual) != len(before) + 1 or actual[:-1] != before:
@@ -127,14 +127,33 @@ def add_row(adapter, before, op, kind):
             )
 
     if op["data_type"] != "BOOL":
-        desired[-1]["data_type"] = op["data_type"]
-        if kind == "gvt":
-            bits = 32 if op["data_type"] == "DINT" else 16
-            desired[-1].update(
-                initial_raw="0", initial_value="0", bit_length="nBitLen:" + str(bits)
-            )
-        commit("data_type", "BOOL", op["data_type"])
-    if kind == "gvt" and op["initial_value"] != desired[-1]["initial_value"]:
+        if complex_type:
+            if kind != "gvt" or op.get("initial_value", "missing") is not None:
+                raise BridgeError("Complex GVT additions require null IDE initialization.")
+            choices = adapter.selector_choices(op["name"], "data_type", "BOOL")
+            if choices.count(op["data_type"]) != 1 or adapter.grid() != desired:
+                raise BridgeError("Complex table type selector differs from the preflight.")
+            updated = adapter.set_cell(op["name"], "data_type", "BOOL", op["data_type"])
+            if len(updated) != len(desired) or updated[:-1] != desired[:-1]:
+                raise BridgeError("Complex type change altered existing table rows.")
+            # These are IDE-produced opaque display fields, not inferred native
+            # initializer syntax or a guessed structure layout/bit length.
+            allowed = {"data_type", "initial_value", "initial_raw", "bit_length"}
+            expected_row = copy.deepcopy(desired[-1])
+            for field in allowed:
+                expected_row[field] = updated[-1][field]
+            if updated[-1] != expected_row or updated[-1]["data_type"] != op["data_type"]:
+                raise BridgeError("Complex type change altered unrelated new-row fields.")
+            desired = updated
+        else:
+            desired[-1]["data_type"] = op["data_type"]
+            if kind == "gvt":
+                bits = 32 if op["data_type"] == "DINT" else 16
+                desired[-1].update(
+                    initial_raw="0", initial_value="0", bit_length="nBitLen:" + str(bits)
+                )
+            commit("data_type", "BOOL", op["data_type"])
+    if kind == "gvt" and not complex_type and op["initial_value"] != desired[-1]["initial_value"]:
         old = desired[-1]["initial_value"]
         desired[-1].update(
             initial_raw=op["initial_value"], initial_value=op["initial_value"]
@@ -151,8 +170,10 @@ class WindowsTableSession(WindowsSession):
         if kind not in ("stru", "gvt"):
             raise BridgeError("Unsupported table document kind.")
         self.kind = kind
-        self.columns = STRUCT_COLUMNS if kind == "stru" else GLOBAL_COLUMNS
         super().__init__(project, program, pid)
+        # WindowsSession initializes FB column labels. Restore the actual
+        # table labels after it, before any name/first-row cell operation.
+        self.columns = STRUCT_COLUMNS if kind == "stru" else GLOBAL_COLUMNS
 
     def locate_editor(self, required=True):
         found = []

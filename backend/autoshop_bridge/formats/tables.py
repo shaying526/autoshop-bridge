@@ -211,6 +211,8 @@ class Table:
                 "Expected a list of at most 32 explicit table operations."
             )
         result = self.raw
+        if self.kind == "gvt" and not self.rows and operations:
+            raise BridgeError("Empty GVT recognition is read-only; file-mode initialization is not validated.")
         for op in operations:
             current = parse(result, self.kind)
             if not isinstance(op, dict):
@@ -361,6 +363,11 @@ def parse(raw, kind):
     ):
         raise BridgeError("Unsupported native table kind/header/size.")
     found = []
+    if kind == "gvt":
+        from autoshop_bridge.formats.empty_table import count_offset
+        offset = count_offset(raw)
+        if offset is not None:
+            found.append(Table(raw, kind, "", offset, ()))
     for start in range(8, min(len(raw), 4096)):
         reader = Reader(raw, start, len(raw))
         try:

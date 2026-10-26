@@ -65,9 +65,9 @@ def regular_file(path: Path) -> Path:
 
 def native_file(path: Path) -> Path:
     resolved = regular_file(path)
-    if resolved.suffix.lower() not in (".st", ".fb", ".fc", ".stru", ".gvt"):
+    if resolved.suffix.lower() not in (".st", ".fb", ".fc", ".stru", ".gvt", ".fbi"):
         raise BridgeError(
-            "Only existing native .ST/.FB/.FC/.stru/.gvt files are supported."
+            "Only existing native .ST/.FB/.FC/.stru/.gvt/.fbi files are supported."
         )
     return resolved
 

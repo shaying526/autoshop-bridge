@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from autoshop_bridge.formats import instances
 from autoshop_bridge.projects import types as type_context
+from autoshop_bridge.projects.identifiers import precheck_addition_names
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import (
@@ -33,6 +34,10 @@ INSTANCE_COLUMNS = dict(
     bit_length="长度",
     id="ID",
 )
+
+# The candidate first-row path below has synthetic coverage only. The user
+# deferred the fresh-project registration blocker; no public flag enables it.
+EMPTY_INSTANCE_ADDITIONS_VALIDATED = False
 
 
 def normalize(raw):
@@ -140,6 +145,7 @@ def read(project, table, pid=None, open_if_missing=False, output=None):
 
 
 def validate(document, rows, types, occupied=()):
+    precheck_addition_names(document)
     if (
         not isinstance(document, dict)
         or set(document) != {"schema", "operations"}
@@ -223,6 +229,7 @@ def add(
     if dry_run and open_if_missing:
         raise BridgeError("Dry run does not open tabs.")
     document = read_json(changes)
+    precheck_addition_names(document)
     a, t, opened, inventory = connect(project, table, pid, open_if_missing)
     info = t.stat()
     if save and (info.st_nlink > 1 or not info.st_mode & stat.S_IWRITE):
@@ -233,6 +240,10 @@ def add(
         if before["modified"]:
             raise BridgeError("Global instance table has unsaved changes.")
         assert_native(raw, before["rows"])
+        if not before["rows"] and not EMPTY_INSTANCE_ADDITIONS_VALIDATED:
+            raise BridgeError(
+                "Empty global instance additions are pending AutoShop validation; no row was created."
+            )
         raw_ops = document.get("operations", [])
         requested = [
             op.get("data_type")
@@ -265,19 +276,19 @@ def add(
             raise BridgeError("Instance table changed during backup.")
         current = copy.deepcopy(before["rows"])
         try:
-            if not current:
-                raise BridgeError(
-                    "Empty instance tables require separate layout validation."
+            # An empty table has no selector until AutoShop creates its first
+            # named row. Validate that exact default before deferred preflight.
+            preflight_pending = not current
+            if current:
+                choices = a.selector_choices(
+                    current[0]["name"], "data_type", current[0]["data_type"]
                 )
-            choices = a.selector_choices(
-                current[0]["name"], "data_type", current[0]["data_type"]
-            )
-            if any(choices.count(op["data_type"]) != 1 for op in ops):
-                raise BridgeError(
-                    "Requested instance type is unavailable/ambiguous in the IDE."
-                )
-            if snapshot(a, t) != before:
-                raise BridgeError("Type-selector preflight changed the instance table.")
+                if any(choices.count(op["data_type"]) != 1 for op in ops):
+                    raise BridgeError(
+                        "Requested instance type is unavailable/ambiguous in the IDE."
+                    )
+                if snapshot(a, t) != before:
+                    raise BridgeError("Type-selector preflight changed the instance table.")
             for op in ops:
                 assert_hash(t, expected.lower())
                 type_context.check(context)
@@ -306,6 +317,16 @@ def add(
                         "Unsupported new instance defaults/allocation state."
                     )
                 current = actual
+                if preflight_pending:
+                    choices = a.selector_choices(row["name"], "data_type", row["data_type"])
+                    if any(choices.count(item["data_type"]) != 1 for item in ops):
+                        raise BridgeError("Requested instance type is unavailable/ambiguous after the first default row; inspect unsaved buffer.")
+                    observed = snapshot(a, t)
+                    if observed["rows"] != current or not observed["modified"]:
+                        raise BridgeError("Deferred instance selector changed the first-row buffer.")
+                    assert_hash(t, expected.lower())
+                    type_context.check(context)
+                    preflight_pending = False
                 if row["data_type"] != op["data_type"]:
                     actual = a.set_cell(
                         op["name"], "data_type", row["data_type"], op["data_type"]

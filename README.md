@@ -4,9 +4,15 @@
 
 ## English
 
+**Let AI read and edit Inovance AutoShop projects directly. Bring vibe coding to PLC development and leave repetitive copy-and-paste behind.**
+
+s10 fixes stale-mirror rejection in the explicit body registration-receipt route. A locked HCP is still unreadable; the existing target is checked using the closed direct-HCP snapshot, live process/tree, all frozen files and clean editor content. Mirror differences remain advisory. Saving still invalidates the receipt. Independent-copy capture/open/read/edit/save/full-readback passed; no compilation was requested or performed in this fix.
+
+s9 fixes a conservative rejection of literal `=` in structure-member comments. Independent AutoShop V4.11.0.5 copies verified INOUT ports and structured globals through IDE saves, offline writes, full readback and zero-error compilation. Other unobserved delimiters and nonzero unknown ST row fields remain rejected; a multi-target request can still be blocked elsewhere. See [offline editing](references/offline-editing.md).
+
 Let your local AI assistant read, query and modify AutoShop PLC projects through a versioned, script-backed Skill.
 
-**Preview:** backend 1.02 · Skill packaging revision 2026-10-24.s5 · updated 2026-10-24. This is a test distribution, not a completed public release or a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
+**Preview:** backend 1.03 · Skill packaging revision **2026-10-26.s10** · updated 2026-10-26. Updates [closed-project offline development](references/offline-editing.md), local FB structures and structured globals; adds [explicit declaration deletion](references/declaration-editing.md) in both modes and verified FBI backup/restore. Deletion does not check or cascade references; compilation remains a separate check. Empty-FBI creation/deletion is still unavailable. Experimental ladder reading remains read-only. This is a test distribution, not a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
 
 ### Install in one sentence
 
@@ -28,7 +34,7 @@ Codex discovers project skills from its working directory and repository ancesto
 | Where changes occur | Native files on disk | The open AutoShop editor buffer |
 | Requirements | Can work with the project closed | Local Windows desktop and the target project open; target tabs can be opened/switched automatically |
 | Strength | Fast saved-content reads and offline batch edits | Keep the project open; supported source insertions/deletions; AutoShop handles metadata when saving |
-| Limits | Cannot see unsaved buffers; current source writes preserve LF count and require matching line metadata | Full-table reads can take seconds; guarded writes can take tens of seconds |
+| Limits | Cannot see unsaved buffers; legacy writers preserve LF count; the separate closed-project offline workflow supports qualified ST/FB line edits and typed declarations | Full-table reads can take seconds; guarded writes can take tens of seconds |
 | Save/reload | Writing changes the disk; tested FB/FC/structure/global-table edits require reopening the project to load | Default is buffer-only; explicit saving writes native files after backup and verification |
 
 The two paths support offline processing and editing inside an open project. Existing program identifiers remain `file` and `editor`; descriptive names do not change commands or APIs.
@@ -43,13 +49,13 @@ Common combinations:
 
 1. “Use autoshop-bridge to scan this project and summarize programs and variable tables without changes.”
 2. “Add a comment to the specified ST program using Editor Mode, but do not save yet.”
-3. “Read the specified structure and global table, then find a DINT variable's definition and references without changes.”
+3. “Read this ladder FB's first two networks, local variables and FB call pins without changing the project.”
 
 ### Requirements and scope
 
 Python 3.9+; runtime uses only the standard library. Editor Mode additionally needs Windows PowerShell/.NET and AutoShop in the same interactive desktop session. The original backend was tested with **Windows 10 / AutoShop V4.11.0.5 / Python 3.9.1**; this is not fresh-machine, Python 3.12, Claude Code or all-client acceptance.
 
-Supported: identified ST, ST-backed FB/FC, bounded project queries, limited variables/structures/global tables/instances, backups and guarded writes. Ladder logic is identified only; system definitions are read-only and require the user's installed XML. No hardware configuration, PLC download/start/stop/forced IO, automatic compilation or compiler-panel capture. See [capability and evidence matrix](references/capabilities.md).
+Supported: identified ST, ST-backed FB/FC, bounded project queries, limited variables/structures/global tables/instances, backups and guarded writes. Separate experimental readers inspect saved LD programs/FBs and ordinary open diagrams: networks, elements, connections, FB call pins and local variables. See [read-only ladder workflow](references/ladder-reading.md). Default scan still only identifies LD; mixed diagrams with embedded ST do not have complete live graph reading. No ladder edits, hardware configuration, PLC download/start/stop/forced IO or automatic compilation. System definitions require the user's installed XML. See [capability and evidence matrix](references/capabilities.md).
 
 ### Package, verification and troubleshooting
 
@@ -77,11 +83,17 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 ## 简体中文
 
+**让 AI 直接读写汇川 AutoShop 工程，把 vibe coding 带入 PLC 开发，告别反复复制粘贴。**
+
+s10修复显式正文凭据路径的旧镜像误拒绝。HCP占用并未解除；使用关闭时直接快照、当前进程/树、全部冻结文件及干净目标正文共同核验，镜像差异仅作提示。保存后凭据仍失效，类型目录/变量新增/创建权限未放宽。独立副本捕获、打开、读取、修改保存和全文回读通过；本轮未编译。
+
+s9修复结构成员注释中ASCII `=`的保守误拒绝，`#`原行为保持；独立副本的INOUT端口与全局结构变量已分别经真实界面保存、离线写入、完整回读和0错误编译。其他未验分隔符、非零未知ST行字段仍拒绝；不能据此推断整批请求均可执行。详见[离线编辑](references/offline-editing.md)。
+
 让支持Skill与本机命令的AI助手，通过经过校验的脚本读取、检索和修改AutoShop工程。
 
 整理方式：AI 根据现有代码、使用说明及用户确认整理  
-当前状态：测试分发包；后台1.02含只读HCPP兼容修正，封装修订2026-10-24.s5；公开发布和新环境IDE验收待完成  
-最后更新：2026-10-24
+当前状态：测试分发包；后台1.03，封装修订**2026-10-26.s10**；更新[离线开发](references/offline-editing.md)、FB内部结构及结构全局变量，加入[两模式明确删除](references/declaration-editing.md)与已识别FBI原件备份恢复。删除不查引用、不级联，编译单独验收；空FBI首次新增/删空仍未实现。保留梯形图只读，不发布梯形图写入或排序；新环境IDE验收待完成  
+最后更新：2026-10-26
 
 AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读完整后台源码或开发历史。
 
@@ -105,7 +117,7 @@ Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下�
 | 修改位置 | 磁盘上的AutoShop原生文件 | 已打开AutoShop的编辑器缓冲区 |
 | 打开要求 | 可以在工程关闭时操作 | 需要本机Windows和目标工程打开；工具可自动打开、切换目标标签 |
 | 优势 | 已保存内容读取快，适合离线批量处理 | 工程保持打开，支持限定正文增删行，保存时由AutoShop处理元数据 |
-| 限制 | 看不到未保存内容；当前正文写入须保持LF数，且行记录匹配 | 整表读取可能数秒，安全写入可能数十秒 |
+| 限制 | 看不到未保存内容；旧入口同LF，独立offline入口支持已识别ST/FB增删行及类型声明，未知布局拒绝 | 整表读取可能数秒，安全写入可能数十秒 |
 | 保存与重载 | 写入即改变磁盘；已验FB/FC/结构/GVT改后须重开工程加载 | 默认只改缓冲，明确保存才在备份和校验后写原生文件 |
 
 两种模式分别服务离线处理与工程打开时的迭代。程序中的标识仍为`file`和`editor`，文档名称变化不改变命令、参数、API或返回状态。
@@ -120,13 +132,13 @@ Codex按当前工作目录及其仓库祖先路径发现Skill，不任意向下�
 
 1. “使用autoshop-bridge扫描这个工程，只汇总程序和变量表，先不要修改。”
 2. “使用编辑器操作模式，给指定ST程序加一条注释，先不要保存。”
-3. “读取指定结构体和全局变量表，检查一个DINT变量的定义与引用，不修改。”
+3. “只读这个梯形图FB的前两个网络、局部变量和FB调用引脚，不修改工程。”
 
 ### 依赖和能力边界
 
 需要Python3.9+，运行部分仅标准库。编辑器操作模式还需Windows PowerShell/.NET，以及同一交互桌面中已打开的AutoShop工程。原后台已验**Windows10 / AutoShop V4.11.0.5 / Python3.9.1**；不能据此宣称新电脑、Python3.12、Claude Code或全部客户端已验收。
 
-支持已识别ST、ST正文型FB/FC、有界查询、限定变量/结构/GVT/实例操作、备份与受保护写入。梯形图仅识别，系统定义只读且需用户本机安装XML；不做硬件配置、PLC下载/启停/强制IO、自动编译或编译面板读取。详细范围和验证程度见[能力表](references/capabilities.md)。
+支持已识别ST、ST正文型FB/FC、有界查询、限定变量/结构/GVT/实例操作、备份与受保护写入。新增[梯形图只读](references/ladder-reading.md)：文件模式读取LD程序/FB的网络、图元、连接、FB调用引脚、局部变量及内嵌ST，编辑器可读取普通图及已物化ST控件；默认scan仍仅识别LD，完整实时混合图未实现。**不发布梯形图写入或排序**。系统定义只读且需用户本机安装XML；不做硬件配置、PLC下载/启停/强制IO或自动编译。详细范围和验证程度见[能力表](references/capabilities.md)。
 
 ### 目录、验收与排错
 

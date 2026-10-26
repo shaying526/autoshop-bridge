@@ -7,6 +7,7 @@ from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats.fb import parse
 from autoshop_bridge.formats.tables import identifier
 from autoshop_bridge.projects import types as type_context
+from autoshop_bridge.projects.identifiers import precheck_addition_names
 from autoshop_bridge.windows.session import (
     assert_clean_native,
     connect,
@@ -59,6 +60,7 @@ def validate_value(field, value, row):
 
 
 def validate_changes(document, rows, types=None):
+    precheck_addition_names(document)
     types = types or {}
     if (
         not isinstance(document, dict)
@@ -125,10 +127,9 @@ def validate_changes(document, rows, types=None):
             if (
                 code is None
                 or (code == 256 and op["category"] != "VAR")
-                or (code == 64 and op["category"] != "INOUT")
             ):
                 raise BridgeError(
-                    "Only scalar interfaces, structure INOUT and ordinary VAR FB instances are enabled."
+                    "Only scalar/structure variables and ordinary VAR FB instances are enabled."
                 )
             default = op["category"] == "INOUT" or code in (64, 256)
             if default and op["initial_value"] is not None:
@@ -257,6 +258,7 @@ def edit(
         raise BridgeError("Variable editing requires --experimental.")
     if dry_run and open_if_missing:
         raise BridgeError("--dry-run does not open tabs; use editor-open first.")
+    precheck_addition_names(document)
     adapter, target, opened = connect(project, program, pid, open_if_missing)
     if target.suffix.lower() == ".fc":
         from autoshop_bridge.windows.function_variables import edit_connected
@@ -327,7 +329,8 @@ def edit(
             op["op"] == "set" for op in operations
         )
         try:
-            if requested:
+            deferred_selector = bool(requested and not current)
+            if requested and current:
                 probe = next(
                     (r for r in current if r["data_type"] in type_context.SCALARS), None
                 )
@@ -372,6 +375,21 @@ def edit(
                             "New variable defaults differ from the supported VAR BOOL profile."
                         )
                     current = actual
+                    if deferred_selector:
+                        # A new FB has no declaration to inspect. The verified
+                        # first name creates AutoShop's VAR/BOOL default; probe
+                        # its real selector before category/type changes. If a
+                        # type is missing, retain this known partial buffer and
+                        # stop; never claim no modification or repeat the add.
+                        choices = adapter.selector_choices(op['name'], 'data_type', 'BOOL')
+                        if any(choices.count(dtype) != 1 for dtype in requested):
+                            raise BridgeError('Requested type is unavailable/ambiguous after first variable creation.')
+                        observed = snapshot(adapter, target)
+                        if (observed['variables'] != current or observed['source'] != before['source']
+                                or observed['native_sha256'] != before['native_sha256'] or not observed['modified']):
+                            raise BridgeError('First-variable selector changed the verified buffer.')
+                        type_context.check(context)
+                        deferred_selector = False
                     if op["category"] != "VAR":
                         desired = copy.deepcopy(current)
                         desired[-1]["category"] = op["category"]

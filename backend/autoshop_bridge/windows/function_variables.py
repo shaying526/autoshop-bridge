@@ -5,6 +5,7 @@ import copy
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import fc
 from autoshop_bridge.formats.tables import identifier
+from autoshop_bridge.projects.identifiers import precheck_addition_names
 from autoshop_bridge.storage import assert_hash, create_backup, target_lock, write_json_new
 from autoshop_bridge.windows.session import assert_clean_native, snapshot, verify_saved
 
@@ -12,6 +13,7 @@ from autoshop_bridge.windows.session import assert_clean_native, snapshot, verif
 def validate(document, rows):
     from autoshop_bridge.windows.variables import validate_value
 
+    precheck_addition_names(document)
     if not isinstance(document, dict) or set(document) != {"schema", "operations"} or document["schema"] != 1:
         raise BridgeError("FC changes require schema=1 and operations.")
     operations = document["operations"]

@@ -148,6 +148,9 @@ def assert_available(project, root, name, display_name):
 
 
 class WindowsNewSTDialog:
+    CATEGORY = '程序块'
+    DIALOG_PROFILE = PROFILE
+    LANGUAGE_VISIBLE = True
     def __init__(self, project, pid=None):
         from autoshop_bridge.windows.session import WindowsSession
         from ctypes import wintypes
@@ -214,9 +217,9 @@ class WindowsNewSTDialog:
             raise BridgeError(
                 "Cannot verify the new-program tree context: {}.".format(exc)
             ) from exc
-        if call.returncode or context.get("selected_name") != "程序块":
+        if call.returncode or context.get("selected_name") != self.CATEGORY:
             raise BridgeError(
-                "Open the new ST dialog from the 程序块 category; other object kinds are blocked."
+                "New-object dialog tree context differs from the requested category."
             )
         dialogs = []
 
@@ -254,7 +257,9 @@ class WindowsNewSTDialog:
             if (
                 a.class_name(h) != cls
                 or not a.user.IsWindowEnabled(h)
-                or not a.user.IsWindowVisible(h)
+                or bool(a.user.IsWindowVisible(h)) != (
+                    self.LANGUAGE_VISIBLE if cid in (1247, 3022) else True
+                )
                 or (title and a.text(h) != title)
             ):
                 raise BridgeError("New-program dialog identity/labels changed.")
@@ -294,7 +299,7 @@ class WindowsNewSTDialog:
             project=str(self.project),
             pid=a.pid,
             dialog_hwnd=dialog,
-            profile=PROFILE,
+            profile=self.DIALOG_PROFILE,
             name=a.control_text(controls[2816]),
             languages=choices,
             selected_language=choices[selected],

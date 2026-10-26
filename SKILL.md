@@ -1,9 +1,13 @@
 ---
 name: autoshop-bridge
-description: Read and modify AutoShop PLC projects using the bundled AutoShop Bridge CLI. Use for ST program bodies, ST-backed FB/FC, supported variables and structures, project queries, backups and editor synchronization. Not for generic Python development, ladder logic editing, hardware configuration or PLC download/control.
+description: Read and modify AutoShop PLC projects using bundled scripts. Use for ST program bodies, ST-backed FB/FC, supported variables and structures, project queries, backups, editor synchronization and experimental read-only LD programs/FBs. Not for generic Python development, ladder editing, hardware configuration or PLC download/control.
 ---
 
 # AutoShop Bridge
+
+s10修复显式正文凭据路径将旧HCPP差异误判为真实登记变化的问题。遇`registration_stale`先按error_context区分文件/进程/树等证据，不能编辑凭据或强制解锁；HCPP始终只是可能过时的提示。保存后凭据仍失效，正常关闭并重新捕获；此修复不授权变量/类型/对象创建。按需读[离线编辑与凭据](references/offline-editing.md)。
+
+s9修复结构初值注释误拒绝。若遇 `offline_initializer_comment_unobserved`，按error_context定位目标/变量/结构成员，并读取[离线编辑](references/offline-editing.md)的字符边界；不要清空注释或改写定义绕过。ASCII `=`、`#`已验证原样保留，其他未验分隔符仍拒绝。完整请求可能有另一个目标格式限制，不据单项成功报告整批成功。
 
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
@@ -27,15 +31,18 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.02`且包检查为`bundle_verified`；`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-26.s8`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
 1. 先有界工程摘要；需要定义/引用时用`code-context`，按需导出和读片段，避免把整工程或窗口整表倾倒到上下文。已保存内容优先文件读取，磁盘不包含未保存缓冲。
-2. 选择模式。方法一文件写入快，正文不允许增删LF，FB/FC行记录必须匹配；已验FB/FC/结构/GVT改后须重开工程。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
-3. 正文任务按[正文编辑](references/source-editing.md)导出、核对基线、制作唯一原文补丁、预检并调用既有写入器。变量/表/实例任务改读[变量和表](references/data-editing.md)，不要把变量声明塞进正文或编辑只读快照。
+   梯形图程序/FB读取改走[梯形图只读](references/ladder-reading.md)的随包独立脚本；已知文件绝对路径可直接读，不依赖HCP。先摘要，再分页读指定网络、引脚、连接和FB变量；不要用ST导出器或把默认scan的“仅识别”误当新读取入口。LD写入/排序仍未发布。
+2. 选择模式。工程已关闭，需要正文增删行、空FB首变量或GVT结构变量时，读[离线开发](references/offline-editing.md)，使用独立offline系列，不沿用旧build/apply的同LF限制，也不能放宽未知行字段。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
+3. 正文任务按[正文编辑](references/source-editing.md)导出、核对基线、制作唯一原文补丁、预检并调用既有写入器。变量/表/实例新增修改改读[变量和表](references/data-editing.md)；明确删除改读[声明删除](references/declaration-editing.md)，使用独立declarations-read/editor-declarations-delete或offline入口，不向旧清单塞入delete。删除不查引用、不级联，语义交编译，完整性保护仍保留。不要把变量声明塞进正文或编辑只读快照。
 4. 逐条检查退出码及JSON状态后再继续。备份成功、当前原文/哈希和完整回读不能省。保存后重新导出用于后续修改；同一工程/会话串行执行。
 5. 分别报告缓冲更新、原生保存、回读、用户编译反馈和业务行为验证。只读或本地候选任务完成后，不额外写入/保存。
+
+离线开发先export冻结直接HCP和依赖，再check/build，使用返回的plan摘要apply；所有备份先于首写，完整回读后由用户重开并编译。不要自动关闭用户工程。HCP占用而普通编辑器入口拒绝时，可按离线开发参考先由用户关闭工程，registration-capture后重开，再给editor-read/sync传--registration-receipt；这只允许已核对目标正文，不授权结构变更，不默认信任旧HCPP，保存后旧凭据失效。
 
 常用只读调用：
 
@@ -51,8 +58,8 @@ python -B $bridge source-read "$artifacts/calc-work" --start 1 --limit 20
 ## 必须停止的情况
 
 - 退出非0、`blocked`、目标/PID歧义、未知格式/布局、未保存用户内容、磁盘与缓冲基线不同、备份失败、模态提示或结果不确定：停止依赖写入。先保存诊断摘要/备份路径、只读核对当前状态，再决定恢复或请求用户处理；不盲目重放写入、不保存旧窗口、不假定回滚。
-- 文件方法发现行数变化或FB/FC行记录滞后，改为经授权的方法二，不能手补元数据。单程序上限1000行（LF数+1，含空行）。
-- 梯形图仅识别`LD`，系统变量仅只读定义；不编辑梯形图、不自动编译、不从编译面板取结果，不做PLC下载、启停或强制IO。更多新建对象/数组/类型变更等未开放范围见能力表。
+- 旧文件入口发现行数变化或FB/FC行记录滞后，不能手补元数据；关闭工程后的ST/FB可按离线参考检查已实现profile，FC增删行仍用经授权的方法二。非零未知ST行字段、混合成员注释等未支持范围保持拒绝。单程序上限1000行（LF数+1，含空行）。
+- 默认scan仍仅识别`LD`；独立梯形图入口支持已观察格式的只读记录查询，未知布局拒绝。含内嵌ST禁止整图复制，先读磁盘正文，当前物化控件另读且不冒充完整实时混合图。系统变量只读；不编辑梯形图、不自动编译、不从编译面板取结果，不做PLC下载、启停或强制IO。更多未开放范围见能力表。
 
 ## 结果交付
 

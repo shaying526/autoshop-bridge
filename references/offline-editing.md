@@ -1,0 +1,102 @@
+# 关闭工程后的离线编辑
+
+整理方式：AI 根据实现与独立副本验证整理  
+当前状态：CLI 1.03实验扩展；独立副本加载、正文/表回读和编译通过，发布包另做完整性验证  
+最后更新：2026-10-26
+
+处理已创建并登记的ST、LiteST FB、结构和全局变量表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
+
+## 命令与路径
+
+以下变量均由本次任务提供，使用绝对路径。bridge指向autoshop_bridge_cli.py。可从其他工作目录调用。
+
+```powershell
+python -B $bridge offline-export --project $project --workspace "$artifacts/offline-work"
+python -B $bridge offline-check --workspace "$artifacts/offline-work" --changes "$artifacts/changes.json"
+python -B $bridge offline-build --workspace "$artifacts/offline-work" --changes "$artifacts/changes.json"
+# 使用built返回的实际plan和plan_sha256，不自行改plan或candidate。
+python -B $bridge offline-apply --plan-file $plan --expect-plan-sha256 $planHash --backup-root "$artifacts/backups" --experimental
+# 仅在需要恢复且当前文件仍匹配apply后哈希时调用，恢复前再次备份。
+python -B $bridge offline-restore --receipt-file $receipt --expect-receipt-sha256 $receiptHash --backup-root "$artifacts/recovery-backups" --experimental
+```
+
+exported冻结直接HCP、所有现存登记文件和额外原生文件。没有独立文件的登记列入excluded_nonfile_registration；原本缺失的非原生配置列入declared_missing，必须保持不存在。两者不成为可写目标；缺失原生依赖拒绝。HCPP不签发离线写资格。export/check/build只读，不证明工程已关闭；apply/restore全程保持Windows独占只读HCP句柄。用户仍须关闭工程，独占句柄不能证明其他软件没有旧内存内容。
+
+checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
+
+## 结构注释预检修复（2026-10-26 / s9）
+
+旧s8把ASCII `=`误列为未观察分隔符。独立副本中正常界面保存的17/31成员结构INOUT初始化串，与保留原注释的候选逐字节一致；GVT结构声明使用独立空初始化串，不套用FB语法。两种路径实际加载、完整窗口回读及全部编译0错误已分别验证。
+
+未观察的分隔符返回 `offline_initializer_comment_unobserved`，含 `error_context`：target、operation_index、variable、category、structure、member、member_index、field、原comment、characters及character_positions、index_base=0、reason与requires。操作、成员和字符索引为0基；错误正文的成员序号为1基。普通候选格式拒绝保留 `offline_invalid_request`，补target和original_error；冲突继续 `offline_conflict`。调用方须处理未知错误码，不靠匹配错误文案判断状态。诊断可能含原注释，分享日志前审阅。
+
+这不增加格式通用性：混合空注释、嵌套、数组等原限制保留。ST若有非零未知行字段仍拒绝，不能清零或压成一行绕过；结构初值修复不保证完整多目标请求通过。check/build不写工程；apply/restore的独占句柄、全部基线、唯一备份、完整候选重建及回读保护未变。
+
+## changes.json
+
+```json
+{
+  "schema": 1,
+  "targets": [
+    {
+      "file": "Block.FB",
+      "source_file": "body.st",
+      "variable_operations": [
+        {"op":"add","name":"bEnabled","data_type":"BOOL","category":"VAR","initial_value":"OFF","comment":"Local flag"},
+        {"op":"add","name":"stInput","data_type":"InputData","category":"INOUT","initial_value":null,"comment":"Input structure"}
+      ]
+    },
+    {
+      "file": "Globals.gvt",
+      "variable_operations": [
+        {"op":"add","name":"gInput","data_type":"InputData","initial_value":null,"comment":"Input data"}
+      ]
+    }
+  ]
+}
+```
+
+file为登记中准确的相对路径。source_file相对changes.json目录解析，为UTF-8无BOM正文，不相对当前工作目录。禁止绝对成员路径、目录逃逸和链接。不修改变量时省略variable_operations；不修改正文时省略source_file。支持1–100目标；FB/GVT每目标1–32变量操作。正文上限1000行（LF+1，含末尾空行）。同一FB先构建变量候选，再处理正文。
+
+FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；成员注释目前仅全空或全部非空可用。V4.11.0.5 实际INOUT保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续拒绝。混合注释、嵌套、数组、STRING拒绝。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。结构VAR新增编码与真实IDE已保存记录逐字节匹配，文件模式覆盖/重开尚未单独验收。
+
+开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI删空/空表新增未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
+
+GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。空GVT首项仍未验。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
+
+ST增删行仅适用于已识别的全零未知行字段profile，重建长度和顺序行记录；非零未知字段或滞后行表拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已被刷新。FC增删行及LD写入不属于本入口；稳定旧build/apply限制保持。
+
+## HCP占用时的目标正文凭据
+
+FBI删除扩展：已登记FBI目标仅允许明确delete、结果须非空，沿用全部基线/备份/摘要及候选重建检查；唯一实例记录段外opaque字节严格保持，不新增或重建未知容器。当前真实CLI编辑器删除保存已验证，文件方法重开70项及恢复71项回读已验证，00:40:05恢复编译0错误。[删除专页](declaration-editing.md)记录证据。通用backup/restore只扩展为严格可解析、profile与扩展匹配的FBI原件恢复，恢复前另做备份，不代表任意FBI生成能力。
+
+HCP的共享限制仍存在。该路径先在工程关闭时取得直接HCP和依赖快照，再在同一AutoShop进程重开后，用实际工程树、原生哈希及当前正文/整表验证目标；HCPP仅提供有界登记提示，不被默认当作最新工程。适用于已登记ST/LiteST FB正文，不授权变量新增、类型目录、对象创建或整个工程配置修改。
+
+```powershell
+# 先由用户关闭目标工程；AutoShop仍运行，显式指定其PID，输出必须是新文件。
+python -B $bridge registration-capture --project $project --program Block --pid $pidValue --output "$artifacts/target-registration.json"
+# 用户重开同一进程的同一工程后执行；--open只打开指定程序标签。
+python -B $bridge editor-read --project $project --program Block --open --registration-receipt "$artifacts/target-registration.json" --output "$artifacts/editor.json"
+# export/patch后，用原editor-sync及其备份、保存回读规则；workspace是正文工作目录。
+python -B $bridge editor-sync $workspace --project $project --program Block --open --save --experimental --registration-receipt "$artifacts/target-registration.json" --backup-root "$artifacts/editor-backups"
+```
+
+Python公共editor_read/editor_sync新增可选registration_receipt（Path，默认None）。不传保持原路径；registration-capture仅CLI/实验内部入口。凭据绑定工程、程序、PID/进程启动身份/主窗口、全部映射对象和全部登记文件状态及原生哈希，不是持久写授权。正文保存、依赖变化、对象树改变或换进程后失效，需重新关闭捕获；不能改凭据或HCPP绕过。首次导航和写前都再验证。当前只读树映射覆盖已观察程序/FB/结构/GVT/FBI类别，内部网络单独分类，FC及未映射配置树语义未开放；未知对象、配置文件变化或模态/未保存内容拒绝。
+
+有界HCPP提取验证头部标识/版本、长度、CRC、解压流、全部成员/路径/重复和恰好四字节尾，不以1f000004的数值本身证明格式完整。未知头字段、尾值和语义仍保留证据；它们不签发写资格。只有闭时直接快照、当前树及内容证明共同满足才能进入上述正文路径。返回registration_evidence包含scope、hint_source和目标验证状态，不能对外描述为实时HCP读取已解决。
+
+s10修复s9凭据路径把镜像哈希差异当作真实登记变化的误拒绝。HCP可读时仍严格核对直接HCP全部字节/登记行；HCP不可读时，镜像必须通过原有有界提取，但其差异只作为提示返回。目标映射、全部登记文件状态及额外原生依赖仍取自**未修改的关闭捕获凭据**，不能用旧镜像删减。当前进程/工程、完整映射对象树、原生文件哈希、干净编辑器全文/整表共同校验；导航前及实际写前再核对。保存后旧凭据仍失效。这个修复仅限显式正文凭据路径，不放宽变量/类型目录/对象创建或离线写入资格。
+
+registration_evidence新增可选`current_hcp_verified:bool`及`registration_hint:null|object`。HCP被占用时前者为false；后者包括`authoritative=false,possibly_stale=true,matches_closed_snapshot,rows_match,captured_sha256,observed_sha256,captured_row_count,observed_row_count,archive_sha256,hcp_error,hcp_winerror,hcp_read_reason`及有界差异。不要把`rows_match=true`等同哈希一致或实时登记已证实。当前树只覆盖已映射对象，未映射配置的内存变化或HCP私有元数据不能全面证明；磁盘配置变化仍由冻结文件哈希拒绝。
+
+凭据错误的CLI结果可含`error_context`：`evidence_source`区分direct_hcp、hcpp_hint_only、native_files、registered_files、live_process、live_session、live_project_tree、requested_binding等；`differences`逐项提供object/key/field/before/after及存在状态，最多32项，另有difference_count/truncated。镜像缺少旧快照对象的after=null仅表示镜像没有该对象，不表示当前工程删除了它。具体上下文可能有路径和注释，外发前审阅。源/树观察不稳定仍拒绝；纯读取可待稳定后重试，写入结果不确定时先检查现状。
+
+registration错误码：registration_needs_refresh、registration_stale、registration_identity_mismatch、registration_scope_denied。所有新命令同步阻塞；没有取消/进度回调。方法二及凭据捕获需要Windows交互桌面和目标AutoShop；不会自动启动、关开工程或回应提示。Skill不交付自动编译/PLC命令。
+
+## 失败与恢复
+
+退出0且status=applied才表示磁盘阶段成功。退出1为error/stopped，退出2为partial。检查完整receipt、written/attempted和backup_run；失败可能已有部分写入，不盲目重试。恢复要求外部receipt摘要及当前apply后哈希，也先另做备份。多文件无事务，不承诺自动回滚或掉电原子性。整套本地元数据不是数字签名；调用方须保留build/apply返回的外部摘要。
+
+offline错误码：offline_conflict、offline_project_unavailable、offline_invalid_request。操作系统文件错误统一为offline_project_unavailable，只有真实Win32共享32/33另带requires_close_entire_project；未知权限问题不猜原因。没有进度回调、取消或自动编译，超时后先检查状态。完整备份含非目标配置，文件多时有额外耗时。
+
+实现：workflows/offline.py和formats/offline_source.py、offline_variables.py、offline_globals.py；Windows句柄守卫projects/offline_guard.py。[实际验证及限制](validation.md)。

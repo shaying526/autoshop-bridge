@@ -71,7 +71,7 @@ class FCContainer:
 
     def variable_document(self):
         return dict(schema=1, read_only=True, program_name=self.program_name,
-                    notes=["Only source.st is editable; this snapshot cannot update FC variables.",
+                    notes=["This FC variable snapshot is read-only; supported variable edits use the editor workflow.",
                            "FC has no decoded initializer or retention columns.",
                            "display_order is not a persistent AutoShop ID; return type is not decoded."],
                     variables=[v.as_dict(i) for i, v in enumerate(self.variables)])
