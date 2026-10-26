@@ -1,5 +1,7 @@
 # 能力和证据边界
 
+s11新增FC标量声明：方法二空表首项/第二项正常保存、重开回读与编译0错误已验；方法一独立FC编码的12种BOOL/INT/DINT×VAR/IN/OUT/INOUT组合从空表写入、加载/完整回读和编译0错误已验。初值仅null，旧记录/完整正文行表保持，闭工程独占/基线/备份/恢复保护保留。首次注释单元格曾超时并留下已知未保存行，经核对后受控继续；另从全新空表正式命令连续成功。不得把一次成功当桌面时序保证。FC复杂类型、返回类型、FCI和离线正文增删行仍未实现。
+
 s10仅修复既有正文凭据路径：关闭捕获的直接HCP、当前进程/对象树、全部冻结文件及干净目标正文联合校验；HCP不可读时旧镜像差异仅作提示，不替换依赖集合。返回current_hcp_verified=false及有界registration_hint差异，不能显示为实时HCP已读取。独立副本真实捕获→同进程打开→读取→注释保存→完整回读通过；保存后旧凭据仍拒绝。其他类型目录/创建/离线资格不变，详见[凭据说明](offline-editing.md)。
 
 s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及非空FBI。FB/FC/GVT可删空，STRU保留至少一成员，空FBI增删仍未实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。混合结构成员注释、嵌套/数组、空GVT首项、FC离线增删正文行的限制保持。新CLI不增加service.__all__入口。

@@ -52,6 +52,8 @@ def fixtures(project):
         for name in ("firstLocal", "secondLocal"))
     (project / "Calc.FC").write_bytes(b"AutoShop" + b"\0" * 24 + string("Calc")
         + struct.pack("<II", 512, 2) + fc_records + b"\0" * 4 + native(b"// synthetic function"))
+    (project / "EmptyCalc.FC").write_bytes(b"AutoShop" + b"\0" * 24 + string("EmptyCalc")
+        + struct.pack("<II", 512, 0) + b"\0" * 4 + native(b"// synthetic empty function"))
     instance_records = b"".join(struct.pack("<II", 256, 256) + string(name) + string("")
         + struct.pack("<II", 257, 0x2100000 + index * 16) + string("Synthetic instance")
         + b"\xff\xfe\xff\0" + struct.pack("<II", 0, 0) + string("Logic") + b"\xff" * 8
@@ -59,7 +61,7 @@ def fixtures(project):
     (project / "Instances.fbi").write_bytes(b"AutoShop-synthetic" + struct.pack("<I", 2)
         + instance_records + b"AutoShop-synthetic-opaque-suffix")
     names = ("Logic.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
-             "Calc.FC", "Instances.fbi")
+             "Calc.FC", "EmptyCalc.FC", "Instances.fbi")
     xml = "<project>" + "".join('<file id="{}"><Caption>{}</Caption><FileName>{}</FileName></file>'.format(
         i, Path(name).stem, name) for i, name in enumerate(names)) + "</project>"
     (project / "demo.hcp").write_bytes(st.encode(xml.encode("utf-16")))
@@ -109,8 +111,9 @@ def run(output):
                 skill = SKILL if label == "A" else relocated
                 project, work = output / location, output / ("work-" + label)
                 fixtures(project)
-                from autoshop_bridge.formats import fb, st, tables
+                from autoshop_bridge.formats import fb, fc, st, tables
                 baseline = tree(project)
+                old_fc = fc.parse((project / "Calc.FC").read_bytes())
                 old_global = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
                 old_row = old_global.rows[0]
                 source = output / ("source-" + label + ".st")
@@ -124,6 +127,11 @@ def run(output):
                 changes.write_text(json.dumps(dict(schema=1, targets=[
                     dict(file="Logic.FB", source_file=source.name, variable_operations=declarations),
                     dict(file="MAIN.ST", source_file=source.name),
+                    dict(file="Calc.FC", variable_operations=[dict(op="add", name="refValue",
+                        data_type="DINT", category="INOUT", initial_value=None, comment="Synthetic reference")]),
+                    dict(file="EmptyCalc.FC", variable_operations=[dict(op="add", name=name,
+                        data_type=dtype, category=category, initial_value=None, comment="Synthetic FC")
+                        for name, dtype, category in (("enabled", "BOOL", "VAR"), ("inputValue", "INT", "IN"))]),
                     dict(file="Globals.gvt", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, comment="Synthetic global", initial_value=None)
                         for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))])])), encoding="utf-8")
@@ -148,7 +156,14 @@ def run(output):
                 for row in current.rows[1:]:
                     assert row.type_code == 64 and row.initial_raw == ""
                     assert row.metadata["address_raw"] == 0xFFFFFFFF
-                for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt"}:
+                full_fc = fc.parse((project / "Calc.FC").read_bytes())
+                empty_fc = fc.parse((project / "EmptyCalc.FC").read_bytes())
+                assert len(full_fc.variables) == 3 and len(empty_fc.variables) == 2
+                assert full_fc.variables[-1].fields == (3, 0xffffffff, 0)
+                assert full_fc.raw[full_fc.inner_offset - 4:] == old_fc.raw[old_fc.inner_offset - 4:]
+                for old, new in zip(old_fc.variables, full_fc.variables):
+                    assert old_fc.raw[old.offset:old.end] == full_fc.raw[new.offset:new.end]
+                for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC"}:
                     assert digest(project / name) == baseline[name], name
                 # Exercise the new declaration API through the exported CLI,
                 # then restore the entire deletion stage before the outer restore.
@@ -195,6 +210,7 @@ def run(output):
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
                     fb_five_variables=True, gvt_unallocated_structures=True, source_lines_added=True,
+                    fc_nonempty_and_empty_additions=True,
                     declaration_delete_five_kinds=True, stale_delete_replay_refused=True,
                     old_records_preserved=True, non_targets_preserved=True, restored_all_bytes=True,
                     elapsed_seconds=round(time.perf_counter()-start, 6)))

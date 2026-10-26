@@ -8,6 +8,8 @@
 
 ## 命令与路径
 
+开发工作树新增FC标量声明编码（[本轮报告](validation.md)，12个类型/类别组合已加载/回读及编译0错误，已纳入s11）：目标必须是已登记并严格可解析的ST型FC，variable_operations仅add，支持BOOL/INT/DINT及VAR/IN/OUT/INOUT，initial_value必须null。示例：`{"file":"CalcDemo.FC","variable_operations":[{"op":"add","name":"inputValue","category":"IN","data_type":"INT","initial_value":null,"comment":"Input"}]}`。FC新增不能带source_file，不能与delete混用；不支持set、复杂类型或返回类型。独立三尾字段记录不含FB初值/保持字段，原记录及整个内层正文/行表保持原字节；已有正文行表滞后不靠新增变量改写。闭工程、直接HCP、全部基线/唯一备份和完整回读保护与其他offline目标相同。
+
 以下变量均由本次任务提供，使用绝对路径。bridge指向autoshop_bridge_cli.py。可从其他工作目录调用。
 
 ```powershell

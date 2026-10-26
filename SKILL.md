@@ -5,6 +5,8 @@ description: Read and modify AutoShop PLC projects using bundled scripts. Use fo
 
 # AutoShop Bridge
 
+s11补齐FC标量新增：方法二支持空表首项/第二项，方法一走offline系列，支持BOOL/INT/DINT的VAR/IN/OUT/INOUT，initial_value必须null。空表先备份并核对IDE默认首行再检查选择器；失败可能留下已知未保存行，不能重放新增。方法一不改FC正文/行表或返回类型。按需读[变量操作](references/data-editing.md)和[离线编辑](references/offline-editing.md)。
+
 s10修复显式正文凭据路径将旧HCPP差异误判为真实登记变化的问题。遇`registration_stale`先按error_context区分文件/进程/树等证据，不能编辑凭据或强制解锁；HCPP始终只是可能过时的提示。保存后凭据仍失效，正常关闭并重新捕获；此修复不授权变量/类型/对象创建。按需读[离线编辑与凭据](references/offline-editing.md)。
 
 s9修复结构初值注释误拒绝。若遇 `offline_initializer_comment_unobserved`，按error_context定位目标/变量/结构成员，并读取[离线编辑](references/offline-editing.md)的字符边界；不要清空注释或改写定义绕过。ASCII `=`、`#`已验证原样保留，其他未验分隔符仍拒绝。完整请求可能有另一个目标格式限制，不据单项成功报告整批成功。

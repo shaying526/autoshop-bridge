@@ -305,6 +305,9 @@ def default_candidate_builder(entry, raw, source, definitions):
         return rebuild_preserved_row_fb(result, source, profile=FB_PRESERVE_ROWS_V1) if source is not None else result
     if suffix == ".st" and "variable_operations" not in entry and source is not None:
         return rebuild_zero_row_st(raw, source, profile=ST_ZERO_ROWS_V1)
+    if suffix == ".fc" and source is None and "variable_operations" in entry:
+        from autoshop_bridge.formats.offline_fc import rebuild
+        return rebuild(raw, entry["variable_operations"])
     if suffix == ".gvt" and source is None and "variable_operations" in entry:
         from autoshop_bridge.formats.offline_globals import rebuild
         return rebuild(raw, entry["variable_operations"], structure_definitions=definitions)
@@ -335,8 +338,13 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
                 raise BridgeError("Offline FC supports variable deletion only, without source_file.")
             if source is not None and suffix != ".st" and not operations:
                 raise BridgeError("Deletion batch source repair requires an ST source or a deletion target FB.")
-    elif any(Path(entry["file"]).suffix.lower() in {".fc", ".fbi"} for entry, _ in entries):
-        raise BridgeError("Offline FC/FBI supports declaration deletion only, without source_file.")
+    else:
+        for entry, source in entries:
+            suffix = Path(entry["file"]).suffix.lower()
+            if suffix == ".fbi":
+                raise BridgeError("Offline FBI supports declaration deletion only, without source_file.")
+            if suffix == ".fc" and (source is not None or not entry.get("variable_operations")):
+                raise BridgeError("Offline FC additions require variable_operations without source_file.")
     definitions = {}
     # Only target records determine deletion eligibility; type users and other
     # native languages remain protected bytes for subsequent AutoShop compilation.
@@ -367,6 +375,8 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
         precheck_addition_names(dict(operations=operations))
         suffix = Path(entry["file"]).suffix.lower()
         local_names = {v.name for v in fb.parse(blobs[entry["file"]]).variables} if suffix == ".fb" and operations else set()
+        if suffix == ".fc" and operations:
+            local_names = {v.name for v in fc.parse(blobs[entry["file"]]).variables}
         for op in operations:
             if not isinstance(op, dict):
                 raise BridgeError("Each variable operation must be an object.")

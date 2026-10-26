@@ -29,8 +29,8 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ```
 
 - FB：已有注释/BOOL/INT/DINT标量初值限定set；VAR/IN/OUT新增BOOL/INT/DINT，初值字符串。INOUT可新增这些标量；IN/OUT/INOUT可新增已解析项目结构，内部VAR可新增已解析项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。本轮结构已验范围为扁平BOOL/INT/DINT。已有标量行用于真实选择器预检，未知/库/数组/循环依赖拒绝。
-- FC：独立六列表，没有初值/保持列；仅已有注释set，VAR/IN/OUT/INOUT的BOOL/INT/DINT新增initial_value必须null。空表、复杂类型、返回类型、FCI和新建FC不开放。不要把FB示例字符串初值套给FC。
-- 文件export的variables.json只读；FB离线编辑改走offline系列及其variable_operations，FC离线仅明确删除，不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保持，保存前备份，保存后原生/窗口核对。新增INOUT后必须按真实需求修改所有调用实参，工具不会自动绑定。
+- FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT的BOOL/INT/DINT新增initial_value必须null。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。复杂类型、返回类型、FCI和新建FC不开放。不要把FB示例字符串初值套给FC。
+- 文件export的variables.json只读；FB/FC离线编辑改走offline系列及其variable_operations，FC支持标量add或独立明确delete，新增不接受source_file，不混用add/delete，不重建正文行表。不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保持，保存前备份，保存后原生/窗口核对。新增INOUT后必须按真实需求修改所有调用实参，工具不会自动绑定。
 
 ## 结构/GVT双模式
 

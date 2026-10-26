@@ -53,8 +53,11 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
         original = assert_clean_native(adapter, target, raw)
         before = snapshot(adapter, target)
         operations = validate(document, before["variables"])
+        additions = [op for op in operations if op["op"] == "add"]
         if dry_run:
-            return dict(status="variables_ready", operations=operations, variable_count=len(before["variables"]))
+            return dict(status="variables_ready", operations=operations, variable_count=len(before["variables"]),
+                        selector_preflight="pending_first_default_row" if additions and not before["variables"]
+                        else "not_performed")
         if all(op["op"] == "set" and op["expected"] == op["value"] for op in operations):
             if close_after:
                 adapter.close()
@@ -86,16 +89,19 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
             current = actual
             check_body_and_disk()
 
+        def inspect_selectors(probe):
+            types = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
+            categories = adapter.selector_choices(probe["name"], "category", probe["category"])
+            if categories != ["VAR", "IN", "OUT", "INOUT"] or any(types.count(op["data_type"]) != 1 for op in additions):
+                raise BridgeError("FC type/category selector differs.")
+
         try:
-            additions = [op for op in operations if op["op"] == "add"]
-            if additions:
+            deferred_selector = bool(additions and not current)
+            if additions and current:
                 probe = next((r for r in current if r["data_type"] in ("BOOL", "INT", "DINT")), None)
                 if probe is None:
                     raise BridgeError("A scalar FC row is required for type-selector preflight.")
-                types = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
-                categories = adapter.selector_choices(probe["name"], "category", probe["category"])
-                if categories != ["VAR", "IN", "OUT", "INOUT"] or any(types.count(op["data_type"]) != 1 for op in additions):
-                    raise BridgeError("FC type/category selector differs.")
+                inspect_selectors(probe)
                 again = snapshot(adapter, target)
                 if any(again[k] != before[k] for k in ("source", "variables", "native_sha256", "modified")):
                     raise BridgeError("FC selector inspection changed the document.")
@@ -112,13 +118,25 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
                         raise BridgeError("FC new variable defaults differ.")
                     current = actual
                     check_body_and_disk()
+                    if deferred_selector:
+                        # The real selector does not exist until the IDE creates
+                        # its first default row. Failure retains that known dirty
+                        # row; never save, repeat the add, or silently discard it.
+                        inspect_selectors(row)
+                        observed = snapshot(adapter, target)
+                        if (observed["variables"] != current or observed["source"] != before["source"]
+                                or observed["native_sha256"] != before["native_sha256"]
+                                or not observed["modified"]):
+                            raise BridgeError("FC first-row selector changed the verified buffer or disk.")
+                        deferred_selector = False
                     set_field(op["name"], "category", "VAR", op["category"])
                     set_field(op["name"], "data_type", "BOOL", op["data_type"])
                     set_field(op["name"], "comment", "", op["comment"])
                 else:
                     set_field(op["name"], "comment", op["expected"], op["value"])
             after = snapshot(adapter, target)
-            if after["variables"] != current or not after["modified"]:
+            if (after["variables"] != current or not after["modified"]
+                    or after["source"] != before["source"] or after["native_sha256"] != before["native_sha256"]):
                 raise BridgeError("FC dirty-state/full-table verification failed.")
             write_json_new(saved / "editor_expected.json", after)
             result = dict(status="variables_updated_not_saved", target=str(target), backup=str(saved),

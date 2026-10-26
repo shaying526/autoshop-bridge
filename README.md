@@ -4,6 +4,8 @@
 
 ## English
 
+s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
+
 **Let AI read and edit Inovance AutoShop projects directly. Bring vibe coding to PLC development and leave repetitive copy-and-paste behind.**
 
 s10 fixes stale-mirror rejection in the explicit body registration-receipt route. A locked HCP is still unreadable; the existing target is checked using the closed direct-HCP snapshot, live process/tree, all frozen files and clean editor content. Mirror differences remain advisory. Saving still invalidates the receipt. Independent-copy capture/open/read/edit/save/full-readback passed; no compilation was requested or performed in this fix.
@@ -12,7 +14,7 @@ s9 fixes a conservative rejection of literal `=` in structure-member comments. I
 
 Let your local AI assistant read, query and modify AutoShop PLC projects through a versioned, script-backed Skill.
 
-**Preview:** backend 1.03 · Skill packaging revision **2026-10-26.s10** · updated 2026-10-26. Updates [closed-project offline development](references/offline-editing.md), local FB structures and structured globals; adds [explicit declaration deletion](references/declaration-editing.md) in both modes and verified FBI backup/restore. Deletion does not check or cascade references; compilation remains a separate check. Empty-FBI creation/deletion is still unavailable. Experimental ladder reading remains read-only. This is a test distribution, not a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
+**Preview:** backend 1.03 · Skill packaging revision **2026-10-26.s11** · updated 2026-10-26. Updates [closed-project offline development](references/offline-editing.md), local FB structures and structured globals; adds [explicit declaration deletion](references/declaration-editing.md) in both modes and verified FBI backup/restore. Deletion does not check or cascade references; compilation remains a separate check. Empty-FBI creation/deletion is still unavailable. Experimental ladder reading remains read-only. This is a test distribution, not a universal client compatibility claim. AI instructions: [SKILL.md](SKILL.md).
 
 ### Install in one sentence
 
@@ -83,6 +85,8 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 ## 简体中文
 
+s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
+
 **让 AI 直接读写汇川 AutoShop 工程，把 vibe coding 带入 PLC 开发，告别反复复制粘贴。**
 
 s10修复显式正文凭据路径的旧镜像误拒绝。HCP占用并未解除；使用关闭时直接快照、当前进程/树、全部冻结文件及干净目标正文共同核验，镜像差异仅作提示。保存后凭据仍失效，类型目录/变量新增/创建权限未放宽。独立副本捕获、打开、读取、修改保存和全文回读通过；本轮未编译。
@@ -92,7 +96,7 @@ s9修复结构成员注释中ASCII `=`的保守误拒绝，`#`原行为保持；
 让支持Skill与本机命令的AI助手，通过经过校验的脚本读取、检索和修改AutoShop工程。
 
 整理方式：AI 根据现有代码、使用说明及用户确认整理  
-当前状态：测试分发包；后台1.03，封装修订**2026-10-26.s10**；更新[离线开发](references/offline-editing.md)、FB内部结构及结构全局变量，加入[两模式明确删除](references/declaration-editing.md)与已识别FBI原件备份恢复。删除不查引用、不级联，编译单独验收；空FBI首次新增/删空仍未实现。保留梯形图只读，不发布梯形图写入或排序；新环境IDE验收待完成  
+当前状态：测试分发包；后台1.03，封装修订**2026-10-26.s11**；更新[离线开发](references/offline-editing.md)、FB内部结构及结构全局变量，加入[两模式明确删除](references/declaration-editing.md)与已识别FBI原件备份恢复。删除不查引用、不级联，编译单独验收；空FBI首次新增/删空仍未实现。保留梯形图只读，不发布梯形图写入或排序；新环境IDE验收待完成  
 最后更新：2026-10-26
 
 AI从[SKILL.md](SKILL.md)进入，按任务读取参考文档；不要求先读完整后台源码或开发历史。
