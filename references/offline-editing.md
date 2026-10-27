@@ -32,6 +32,34 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 
 ## 全局FBI项目FB实例（s18）
 
+### 已有实例的名称、注释和初值
+
+已有实例使用`set`，字段为`name`、`comment`、`initial_value`。`expected`和`value`均为明确字符串；初值用完整原生初始化串，清空用`""`，不是新增的null。旧值从本轮`declarations-read`或原生实例读取获得；声明表隐藏初值预览不等于该原生串。操作按顺序执行，改名后的后续操作使用新名称。
+
+```json
+{
+  "schema": 1,
+  "targets": [{
+    "file": "Instances.fbi",
+    "variable_operations": [
+      {"op":"set","name":"fbTimer","field":"name","expected":"fbTimer","value":"fbTimerNew"},
+      {"op":"set","name":"fbTimerNew","field":"comment","expected":"Old comment","value":"New comment"},
+      {"op":"set","name":"fbTimerNew","field":"initial_value","expected":"","value":"(IN:=OFF, PT:=250, Q:=OFF, ET:=0, iRecordCount:=0)"}
+    ]
+  }]
+}
+```
+
+沿本页export/check/build/apply/restore执行；名称/注释/初值仅替换指定字符串，顺序、类型、地址及其他元数据、其他记录和前后容器保持。初始化正文由调用者按实际类型组织，工具不增加成员/表达式语义证明。已有字段无需递归解析类型定义，不因无关FB/LD/结构未解析而阻断。仅原生表示、身份和已知重名资格检查，保留完整基线/备份/回读；未知容器仍返回格式未实现。
+
+文件模式改名**不更新正文引用**。调用者可在同批请求中显式添加ST的source_file，也可另行修改正文；保留旧引用允许执行，最终由AutoShop编译检查。不自动级联或回滚业务改动。
+
+编辑器方式另有`instances-editor-edit`。名称和注释使用上述单条set对象；初值通过真实工具箱成员编辑，使用`{"op":"set","name":"fbTimer","field":"initial_value","member":"PT","expected":"0","value":"250"}`。先用`instances-editor-initial-read --project $project --table $table --instance fbTimer --pid $pidValue --output "$artifacts/initial.json"`读取实际成员值及独立原生全文；不要从声明表隐藏栏猜旧值。编辑器请求外层是`{"schema":1,"operations":[...]}`，命令参数与instances-editor-add一致，需本次原生SHA256及experimental，显式save才保存。
+
+正常IDE改名可能在目标表保存前自动修改并保存正文引用。该路径先保护全部原生源码及登记证据，返回reference_updates清单、每文件前后哈希和实际名称替换数；不要求全部引用已更新。未改动的未知对象不解析，实际关联文件发生未支持格式变化时保留备份并明确停止，不猜写未知字节。工具箱初值按准确实例/已显示成员路径修改，完整回读整表及该实例成员；IDE可能排序、规范成员名大小写，保存后返回native_initializers原生全文，其他记录及元数据保持。
+
+本轮已完成独立副本两模式及恢复的完整回读、三次0错误编译；随s19交付。真实结果与仍未实现范围见[FBI字段专项](validation.md)。同批可先add默认实例，再用set提供完整原生初值；新增构造范围仍以已有add支持类型/profile为准。
+
 目标为准确登记的FBI文件，命令沿用上文offline-export/check/build/apply/restore，工程须关闭。add没有category，不把全局实例当普通GVT或FB内部VAR记录。示例中的文件及类型名须换成当次登记对象：
 
 ```json

@@ -12,6 +12,7 @@ import stat
 import xml.etree.ElementTree as ET
 import tempfile
 import uuid
+from collections import Counter
 from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError, ConflictError, FormatRejection
@@ -345,13 +346,17 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
         for entry, source in entries:
             suffix = Path(entry["file"]).suffix.lower()
             if suffix == ".fbi" and (source is not None or not entry.get("variable_operations")):
-                raise BridgeError("Offline FBI additions require variable_operations without source_file.")
+                raise BridgeError("Offline FBI mutations require variable_operations without source_file.")
             if suffix == ".fc" and (source is not None or not entry.get("variable_operations")):
                 raise BridgeError("Offline FC additions require variable_operations without source_file.")
     definitions = {}
     # Only target records determine deletion eligibility; type users and other
     # native languages remain protected bytes for subsequent AutoShop compilation.
-    for name in (() if deleting else manifest["registered"]):
+    field_only_fbi = (any(Path(entry["file"]).suffix.lower() == ".fbi" and any(
+        isinstance(op, dict) and op.get("op") == "set" for op in entry.get("variable_operations", []))
+        for entry, _ in entries) and not any(isinstance(op, dict) and op.get("op") == "add"
+        for entry, _ in entries for op in entry.get("variable_operations", [])))
+    for name in (() if deleting or field_only_fbi else manifest["registered"]):
         if Path(name).suffix.lower() == ".stru" and manifest["registered"][name]["state"] == "present":
             try:
                 definition = tables.parse(blobs[name], "stru")
@@ -400,16 +405,17 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
     project_names.update(Path(name).stem for name in manifest["registered"])
     global_additions = {Path(entry["file"]).suffix.lower() for entry, _ in entries
                         if Path(entry["file"]).suffix.lower() in (".gvt", ".fbi")
-                        and any(isinstance(op, dict) and op.get("op") == "add"
+                        and any(isinstance(op, dict) and (op.get("op") == "add" or (
+                            Path(entry["file"]).suffix.lower() == ".fbi" and op.get("op") == "set" and op.get("field") == "name"))
                                 for op in entry.get("variable_operations", []))}
-    global_names = set()
+    global_names = Counter()
     if global_additions:
         for name, raw in blobs.items():
             try:
                 if Path(name).suffix.lower() == ".gvt":
-                    global_names.update(row.name for row in tables.parse(raw, "gvt").rows)
+                    global_names.update(row.name.casefold() for row in tables.parse(raw, "gvt").rows)
                 elif Path(name).suffix.lower() == ".fbi":
-                    global_names.update(row["name"] for row in instances.parse(raw)["instances"])
+                    global_names.update(row["name"].casefold() for row in instances.parse(raw)["instances"])
             except BridgeError:
                 if ".gvt" in global_additions:
                     raise  # Preserve the existing GVT workflow's qualification.
@@ -420,6 +426,7 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
         operations = entry.get("variable_operations", [])
         precheck_addition_names(dict(operations=operations))
         suffix = Path(entry["file"]).suffix.lower()
+        fbi_names = [r["name"] for r in instances.parse(blobs[entry["file"]])["instances"]] if suffix == ".fbi" else []
         local_names = {v.name for v in fb.parse(blobs[entry["file"]]).variables} if suffix == ".fb" and operations else set()
         if suffix == ".fc" and operations:
             local_names = {v.name for v in fc.parse(blobs[entry["file"]]).variables}
@@ -431,7 +438,25 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
                     raise BridgeError("Editing a structure and adding a reference to it in one batch is unsupported.")
                 require_new_identifier(op.get("name"), existing_names=global_names if suffix in (".gvt", ".fbi") else local_names,
                                        project_names=project_names if suffix in (".gvt", ".fbi") else ())
-                (global_names if suffix in (".gvt", ".fbi") else local_names).add(op["name"])
+                if suffix in (".gvt", ".fbi"):
+                    global_names[op["name"].casefold()] += 1
+                    if suffix == ".fbi":
+                        fbi_names.append(op["name"])
+                else:
+                    local_names.add(op["name"])
+            elif suffix == ".fbi" and op.get("op") == "set" and op.get("field") == "name":
+                matches = [i for i, name in enumerate(fbi_names) if name == op.get("name")]
+                value = op.get("value")
+                if len(matches) != 1 or not isinstance(value, str) or not value.isidentifier():
+                    raise BridgeError("FBI rename requires an exact existing name and a native identifier.")
+                old_key = op["name"].casefold()
+                global_names[old_key] -= 1
+                if global_names[old_key] == 0:
+                    del global_names[old_key]
+                if global_names.get(value.casefold(), 0):
+                    raise BridgeError("FBI rename conflicts with a known global declaration: " + value)
+                global_names[value.casefold()] += 1
+                fbi_names[matches[0]] = value
     builder = candidate_builder or default_candidate_builder
     candidates = []
     for entry, source in entries:

@@ -1,6 +1,7 @@
 """Global FB instances: normal IDE serialization, strict native segment readback."""
 
 import copy
+import ctypes
 import stat
 import re
 from pathlib import Path
@@ -48,7 +49,7 @@ def normalize(raw):
         row = {k: record[v] or "" for k, v in INSTANCE_COLUMNS.items()}
         if (
             row["row"] != str(len(rows) + 1)
-            or not identifier(row["name"])
+            or not row["name"].isidentifier()
             or row["name"].casefold() in names
             or not row["id"].isdigit()
             or row["id"] in ids
@@ -67,6 +68,141 @@ class WindowsInstanceSession(WindowsTableSession):
 
     def grid(self):
         return normalize(self.raw_grid())
+
+    def raw_grid(self):
+        self.assert_no_cell_edit()
+        rows, names = [], None
+        while True:
+            page = self.accessible("instance_grid_page", self.variable_grid(), offset=len(rows), limit=16)
+            if (not isinstance(page, dict) or set(page) != {"schema", "scope", "offset", "limit", "total", "names", "columns", "rows"}
+                    or page["schema"] != 1 or page["scope"] != "fbi_declarations_page"
+                    or type(page["offset"]) is not int or page["offset"] != len(rows)
+                    or page["limit"] != 16 or type(page["total"]) is not int or not 0 <= page["total"] <= 4096
+                    or not isinstance(page["names"], list) or len(page["names"]) != page["total"]
+                    or any(not isinstance(name, str) or not name.isidentifier() for name in page["names"])
+                    or len({name.casefold() for name in page["names"]}) != page["total"]
+                    or page["columns"] != list(INSTANCE_COLUMNS.values())
+                    or not isinstance(page["rows"], list) or len(page["rows"]) != min(16, page["total"] - len(rows))):
+                raise BridgeError("Incomplete/inconsistent FBI grid page.")
+            if names is not None and names != page["names"]:
+                raise BridgeError("FBI declaration identities changed between pages.")
+            names = page["names"]
+            for index, row in enumerate(page["rows"], len(rows)):
+                if (not isinstance(row, dict) or set(row) != set(INSTANCE_COLUMNS.values())
+                        or any(not isinstance(value, str) for value in row.values())
+                        or row[INSTANCE_COLUMNS["name"]] != names[index]
+                        or row[INSTANCE_COLUMNS["row"]] != str(index + 1)):
+                    raise BridgeError("FBI page row identity/columns differ.")
+            rows.extend(page["rows"])
+            if len(rows) == len(names):
+                self.last_grid_read = dict(read_scope="declarations", declaration_rows=len(rows),
+                                           paged=True, page_size=16, complete=True)
+                return rows
+
+    def set_cell(self, variable, field, expected, value):
+        self.write_cell(variable, field, expected, value)
+        if field == "name":
+            # Normal FBI rename can rebuild the document/grid and open a source
+            # reference. Resolve the same exact registered table, never reuse
+            # its former control handle or repeat the name edit.
+            self.validate_main()
+            self.locate_editor()
+        return self.grid()
+
+    def _initial_grid(self):
+        self.validate_handles()
+        grids = []
+        for handle in self.children(self.main):
+            if self.class_name(handle) != "VSFlexGrid8N" or not self.user.IsWindowVisible(handle):
+                continue
+            parent = self.user.GetParent(handle)
+            while parent and parent != self.main:
+                if self.text(parent) == "工具箱":
+                    grids.append(handle)
+                    break
+                parent = self.user.GetParent(parent)
+        if len(grids) != 1:
+            raise BridgeError("Expected one visible instance initial-value toolbox grid.")
+        return grids[0]
+
+    def _initial_rows(self, grid, instance):
+        value = self.accessible("instance_initial_read", grid, variable=instance)
+        columns = dict(name="变量名", initial_value="初始值", data_type="类型", comment="注释",
+                       full_name="全名", device_address="软元件地址", allocated_address="分配地址")
+        if (not isinstance(value, dict) or set(value) != {"schema", "scope", "instance", "rows"}
+                or value["schema"] != 1 or value["scope"] != "selected_instance_initial_members"
+                or value["instance"] != instance or not isinstance(value["rows"], list)
+                or not 1 <= len(value["rows"]) <= 4096):
+            raise BridgeError("Unsupported instance initial-value snapshot.")
+        rows = []
+        for row in value["rows"]:
+            if (not isinstance(row, dict) or set(row) != set(columns.values())
+                    or any(not isinstance(text, str) for text in row.values())):
+                raise BridgeError("Unsupported instance initial-value columns.")
+            rows.append({key: row[label] for key, label in columns.items()})
+        names = [row["full_name"].casefold() for row in rows]
+        if (names[0] != instance.casefold() or len(set(names)) != len(names)
+                or any(not (name.startswith(instance.casefold() + ".") or name.startswith(instance.casefold() + "[")) for name in names[1:])):
+            raise BridgeError("Instance initial-value member identities differ.")
+        return rows
+
+    def initial_members(self, instance):
+        grid = self._initial_grid()
+        if any(self.class_name(h).startswith("ATL:") and self.user.IsWindowVisible(h) for h in self.children(grid)):
+            raise BridgeError("An instance member initial-value cell is being edited; finish/cancel it first.")
+        self.restore_for_cell_edit()
+        self.activate()
+        self.assert_no_cell_edit()
+        if self.accessible("select_verified_cell", self.variable_grid(), variable=instance,
+                           column=self.columns["name"], expected=instance) != "selection_verified":
+            raise BridgeError("Initial-value instance selection was not verified.")
+        return self._initial_rows(self._initial_grid(), instance)
+
+    def set_initial_member(self, instance, member, expected, value):
+        rows = self.initial_members(instance)
+        full = instance + "." + member
+        matches = [row for row in rows[1:] if row["full_name"].casefold() == full.casefold()]
+        if len(matches) != 1 or matches[0]["initial_value"] != expected:
+            raise BridgeError("Initial-value member is not displayed or its baseline differs.")
+        if matches[0]["initial_value"] == "...":
+            raise BridgeError("Composite initial-value cells need a displayed member leaf; full native strings use the offline workflow.")
+        grid = self._initial_grid()
+        if self.accessible("instance_initial_select", grid, variable=instance, column=member,
+                           expected=expected) != "initial_member_selection_verified":
+            raise BridgeError("Initial-value member selection was not verified.")
+        self.post(grid, 0x100, 113)
+        self.post(grid, 0x101, 113)
+        def controls():
+            return [h for h in self.children(grid) if self.class_name(h).startswith("ATL:") and self.user.IsWindowVisible(h)]
+        self.wait_until(lambda: len(controls()) == 1, "instance member initial-value editor")
+        control = controls()[0]
+        if self.control_text(control) != expected:
+            raise BridgeError("Initial-value inline editor baseline differs.")
+        if matches[0]["data_type"] == "BOOL":
+            count = self.window_message(control, 0x0146)
+            if count != 2:
+                raise BridgeError("Unsupported BOOL initial-value selector.")
+            choices = []
+            for index in range(count):
+                length = self.window_message(control, 0x0149, index)
+                if not 0 <= length <= 32:
+                    raise BridgeError("Unsupported BOOL initial-value choice length.")
+                text = ctypes.create_unicode_buffer(length + 1)
+                self.window_message(control, 0x0148, index, ctypes.addressof(text))
+                choices.append(text.value)
+            if set(choices) != {"ON", "OFF"} or value not in choices:
+                raise BridgeError("BOOL initial-value requires an actual ON/OFF choice.")
+            self.window_message(control, 0x014E, choices.index(value))
+        else:
+            text = ctypes.create_unicode_buffer(value)
+            if not self.window_message(control, 0x000C, 0, ctypes.addressof(text)):
+                raise BridgeError("Initial-value editor rejected text.")
+        if self.control_text(control) != value:
+            raise BridgeError("Initial-value inline text readback differs.")
+        self.post(control, 0x100, 13)
+        self.post(control, 0x101, 13)
+        self.wait_until(lambda: not self.user.IsWindowVisible(control), "instance member initial-value commit")
+        return self._initial_rows(grid, instance)
 
 
 def connect(project, table, pid=None, open_if_missing=False):

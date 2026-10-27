@@ -29,6 +29,13 @@ def parser() -> argparse.ArgumentParser:
     cmd = commands.add_parser("declarations-read", help="Read declaration identities and definitions without ST source")
     cmd.add_argument("native", type=Path)
     cmd.add_argument("--output", type=Path)
+    cmd = commands.add_parser("instances-editor-initial-read", help="Read actual displayed instance member initial values")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--table", required=True)
+    cmd.add_argument("--instance", required=True)
+    cmd.add_argument("--pid", type=int)
+    cmd.add_argument("--open", dest="open_if_missing", action="store_true")
+    cmd.add_argument("--output", type=Path)
     cmd = commands.add_parser("editor-declarations-delete", help="Explicit experimental declaration deletion through AutoShop")
     cmd.add_argument("--project", required=True, type=Path)
     cmd.add_argument("--object", required=True, dest="program")
@@ -75,20 +82,22 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument("--pid", type=int)
     cmd.add_argument("--open", dest="open_if_missing", action="store_true")
     cmd.add_argument("--output", type=Path)
-    cmd = commands.add_parser(
-        "instances-editor-add", help="Add project FB instances using IDE defaults"
-    )
-    cmd.add_argument("--project", required=True, type=Path)
-    cmd.add_argument("--table", required=True)
-    cmd.add_argument("--changes", required=True, type=Path)
-    cmd.add_argument("--expect-sha256", dest="expected", required=True)
-    cmd.add_argument("--pid", type=int)
-    cmd.add_argument("--open", dest="open_if_missing", action="store_true")
-    cmd.add_argument("--save", action="store_true")
-    cmd.add_argument("--close", dest="close_after", action="store_true")
-    cmd.add_argument("--experimental", action="store_true")
-    cmd.add_argument("--dry-run", action="store_true")
-    cmd.add_argument("--backup-root", type=Path)
+    for name, help_text in (
+        ("instances-editor-add", "Add project FB instances using IDE defaults"),
+        ("instances-editor-edit", "Edit existing FBI fields with complete native readback"),
+    ):
+        cmd = commands.add_parser(name, help=help_text)
+        cmd.add_argument("--project", required=True, type=Path)
+        cmd.add_argument("--table", required=True)
+        cmd.add_argument("--changes", required=True, type=Path)
+        cmd.add_argument("--expect-sha256", dest="expected", required=True)
+        cmd.add_argument("--pid", type=int)
+        cmd.add_argument("--open", dest="open_if_missing", action="store_true")
+        cmd.add_argument("--save", action="store_true")
+        cmd.add_argument("--close", dest="close_after", action="store_true")
+        cmd.add_argument("--experimental", action="store_true")
+        cmd.add_argument("--dry-run", action="store_true")
+        cmd.add_argument("--backup-root", type=Path)
     cmd = commands.add_parser(
         "object-dialog", help="Inspect the already-open normal new-program dialog"
     )
@@ -403,6 +412,12 @@ def main(argv=None) -> int:
                 args["open_if_missing"] = False
             from autoshop_bridge.windows.declaration_edit import edit
             result = edit(**args)
+        elif command == "instances-editor-edit":
+            from autoshop_bridge.windows.instance_edit import edit
+            result = edit(**args)
+        elif command == "instances-editor-initial-read":
+            from autoshop_bridge.windows.instance_edit import read_initial
+            result = read_initial(**args)
         elif command == "registration-capture":
             from autoshop_bridge.windows.registration_observer import capture_registration
             result = capture_registration(**args)

@@ -1,5 +1,30 @@
 # 变量、结构、全局表与实例
 
+## FBI已有实例编辑
+
+名称、注释、初值是已有实例的正常set操作，不需要删除重建或先证明引用、类型和业务正确。先读准确FBI文件及本次SHA256；未实现的布局与字段应明确说明，不能靠放宽检查或编辑只读快照绕过。
+
+**文件模式**：工程关闭后使用[offline系列](offline-editing.md#已有实例的名称注释和初值)，目标variable_operations中采用`{"op":"set","name":"fbTimer","field":"name","expected":"fbTimer","value":"fbTimerNew"}`；comment和initial_value同样指定准确旧字符串/新字符串。初值是完整原生串，清空用`""`，不是新增时的null。用`declarations-read`读initial_value_raw，不能把声明表隐藏栏当原生全文。保留记录顺序、类型、地址和其他元数据、其他记录及容器。文件模式不更新正文引用；由AI另列source_file或随后修改正文，不因旧引用尚在而阻止改名，编译检查语义。
+
+**编辑器模式**：先读取实际工具箱成员值，使用返回的native_sha256和明确旧值。读取会选中实例并改变焦点/滚动，不编辑或保存。
+
+```powershell
+python -B $bridge instances-editor-initial-read --project $project --table $table --instance fbTimer --pid $pidValue --output "$artifacts/initial-before.json"
+python -B $bridge instances-editor-edit --project $project --table $table --changes "$artifacts/fbi-fields.json" --expect-sha256 $nativeHash --pid $pidValue --experimental --save --backup-root "$artifacts/backups"
+```
+
+```json
+{"schema":1,"operations":[
+  {"op":"set","name":"fbTimer","field":"name","expected":"fbTimer","value":"fbTimerNew"},
+  {"op":"set","name":"fbTimerNew","field":"comment","expected":"Old comment","value":"New comment"},
+  {"op":"set","name":"fbTimerNew","field":"initial_value","member":"PT","expected":"0","value":"250"}
+]}
+```
+
+操作按顺序执行，改名后使用新名称。pidValue取本次实际AutoShop PID，不用PowerShell自身的PID。modified=true只读反馈不授权保存或丢弃，写入前由用户处理已有未保存内容。方法二初值通过工具箱中当前已显示的成员路径操作；不把根行“...”当文本编辑，也不把整条原生字符串塞入成员值。完整原生串或尚未物化的嵌套成员可用文件模式；界面自动展开任意嵌套树未实现。BOOL使用实际ON/OFF选项，其他值交正常IDE控件处理。IDE可能规范成员顺序/大小写，保存后native_initializers返回实际原生全文；完整核对成员、FBI整表及非目标源文件。已有字段不要求递归解析类型定义，无关LD/结构未解析不阻断。大FBI表的完整界面校验可能花数分钟，可按任务选择文件模式。
+
+正常IDE改名可能立即更新并保存引用，早于FBI目标保存；工具先保护全部原生源码及登记证据，reference_updates逐文件列出前后哈希和实际名称替换数。未更新的旧引用允许保留，不证明引用完整性。若软件实际改变了未支持的关联格式/元数据，则保留备份、报告停止及现场，不伪造元数据或盲目重试。`instances_fields_saved`与`instances_fields_saved_closed`表示已保存/完整回读，不代表已编译；`instances_updated_not_saved`仍可能已有IDE更新的引用，必须检查结果清单。
+
 s18全局FBI项目FB实例文件新增走[offline系列](offline-editing.md#全局fbi项目fb实例s18)：准确FBI目标、add/name/data_type/initial_value:null/comment，无category，空表首项/第二项及批量同格式；正文由调用者另作目标组织。新记录不复制地址，未知双表布局明确拒绝，旧实例及两侧容器保持。
 
 s17补齐内部VAR项目FB实例的文件新增：用[offline系列](offline-editing.md#fb内部项目fb实例s17)，现有variable_operations/add，category:VAR、initial_value:null、准确登记类型名；空表及批量同格式。IDE将FB类型文本大写，工具不构造传递初始化或地址，不同步业务正文。方法二已兼容这项实际显示规则，原记录及其他字段严格保护。

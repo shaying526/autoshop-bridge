@@ -9,6 +9,8 @@ description: Read and modify AutoShop PLC projects using bundled scripts. Use fo
 
 结构成员正规改名按[改名工作流](references/structure-renaming.md)：table-check支持field=name；table-apply或structure-rename-plan/apply同步已知关联初始化成员键。正文引用由调用者另行修改，旧引用不阻断改名。
 
+FBI已有实例的名称、注释和初值走[既有实例编辑](references/data-editing.md#fbi已有实例编辑)：文件模式修改完整原生字符串；编辑器初值明确指定工具箱成员路径，先读取真实成员旧值。文件模式不改引用，正常IDE改名可能自动保存引用，按结果清单核对。
+
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
 说明中的**文件直改模式（方法一，Direct File Mode）**对应程序标识`file`，直接读写磁盘原生文件；**编辑器操作模式（方法二，Editor Mode）**对应`editor`，操作AutoShop编辑器缓冲并显式保存。这里只统一说明名称，不改命令、参数、API或结果状态。
@@ -31,7 +33,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-28.s18`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-28.s19`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 

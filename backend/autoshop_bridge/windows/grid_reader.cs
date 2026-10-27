@@ -233,6 +233,22 @@ public static class BridgeGridReader {
   return new Dictionary<string,object>{{"schema",2},{"rows",rows},{"metadata",metadata}};
  }
 
+ public static object ReadInstancePage(IBridgeGridSource source,int offset,int limit){
+  if(offset<0 || limit<1 || limit>32)throw new Exception("Invalid FBI page range");
+  Layout layout=new Layout(source);List<string> names=layout.Declarations();
+  if(layout.Watch || layout.SystemReadOnly || layout.Columns.Count!=11 || layout.Columns[10]!="ID" || layout.Columns[8]!="指针地址")throw new Exception("Expected FBI declaration columns");
+  if(layout.Rows!=names.Count+2 || offset>names.Count)throw new Exception("Unexpected FBI declaration boundary/page");
+  var rows=new List<Dictionary<string,string>>();
+  for(int i=offset;i<Math.Min(names.Count,offset+limit);i++){
+   var row=new Dictionary<string,string>();
+   for(int c=0;c<layout.Columns.Count;c++)row[layout.Columns[c]]=layout.Cell(layout.DeclarationRows[i],c);
+   rows.Add(row);
+  }
+  layout.Stable(names);
+  return new Dictionary<string,object>{{"schema",1},{"scope","fbi_declarations_page"},{"offset",offset},{"limit",limit},
+   {"total",names.Count},{"names",names},{"columns",layout.Columns},{"rows",rows}};
+ }
+
  public static CellAddress Find(IBridgeGridSource source,string variable,string column,string expected){
   Layout layout=new Layout(source);List<string> names=layout.Declarations();
   List<int> roots=layout.Watch?layout.WatchRoots(names):null;int c=layout.Columns.IndexOf(column);

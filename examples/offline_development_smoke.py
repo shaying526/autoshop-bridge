@@ -190,6 +190,37 @@ def run(output):
                     assert row["uninterpreted_metadata"]["address_raw"] == 0xffffffff
                 for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC", "Instances.fbi"}:
                     assert digest(project / name) == baseline[name], name
+                before_fields = tree(project)
+                field_changes = output / ("fbi-fields-" + label + ".json")
+                field_changes.write_text(json.dumps(dict(schema=1, targets=[dict(file="Instances.fbi", variable_operations=[
+                    dict(op="set", name="firstInstance", field="name", expected="firstInstance", value="editedInstance"),
+                    dict(op="set", name="editedInstance", field="comment", expected="Synthetic instance", value="Edited instance"),
+                    dict(op="set", name="editedInstance", field="initial_value", expected="", value="(enabled:=ON)"),
+                ])])), encoding="utf-8")
+                field_work = output / ("fbi-fields-work-" + label)
+                cli(skill, "offline-export", "--project", project, "--workspace", field_work)
+                cli(skill, "offline-check", "--workspace", field_work, "--changes", field_changes)
+                field_plan = cli(skill, "offline-build", "--workspace", field_work, "--changes", field_changes)
+                field_result = cli(skill, "offline-apply", "--plan-file", field_plan["plan"],
+                    "--expect-plan-sha256", field_plan["plan_sha256"], "--experimental",
+                    "--backup-root", output / ("fbi-fields-backups-" + label))
+                assert field_result["status"] == "applied"
+                edited_raw = (project / "Instances.fbi").read_bytes()
+                edited = instances.parse(edited_raw)
+                assert edited["instance_count"] == new_instances["instance_count"]
+                assert (edited["instances"][0]["name"], edited["instances"][0]["comment"],
+                    edited["instances"][0]["initial_value_raw"]) == ("editedInstance", "Edited instance", "(enabled:=ON)")
+                assert edited["instances"][0]["uninterpreted_metadata"] == new_instances["instances"][0]["uninterpreted_metadata"]
+                assert edited["opaque_prefix_sha256"] == new_instances["opaque_prefix_sha256"]
+                assert edited["opaque_suffix_sha256"] == new_instances["opaque_suffix_sha256"]
+                for old, new in zip(new_instances["instances"][1:], edited["instances"][1:]):
+                    a, b = old["record_offset"], new["record_offset"]
+                    assert new_fbi[a:a+old["record_bytes"]] == edited_raw[b:b+new["record_bytes"]]
+                assert all(digest(project / name) == value for name, value in before_fields.items() if name != "Instances.fbi")
+                cli(skill, "offline-restore", "--receipt-file", field_result["receipt"],
+                    "--expect-receipt-sha256", field_result["receipt_sha256"], "--experimental",
+                    "--backup-root", output / ("fbi-fields-restore-" + label))
+                assert tree(project) == before_fields
                 # Exercise the new declaration API through the exported CLI,
                 # then restore the entire deletion stage before the outer restore.
                 before_delete = tree(project)
@@ -235,6 +266,7 @@ def run(output):
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
                     fb_seven_variables=True, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,
                     fc_nonempty_and_empty_additions=True,
                     declaration_delete_five_kinds=True, stale_delete_replay_refused=True,

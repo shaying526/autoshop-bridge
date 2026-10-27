@@ -91,6 +91,8 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 ### Version notes
 
+s19 adds existing FBI instance name, comment and initial-value edits in both modes. File edits preserve references for the caller; IDE renames report AutoShop's actual reference changes. See [usage](references/data-editing.md#fbi已有实例编辑) and [validation](references/validation.md).
+
 s18 adds offline global FBI instances of registered project FBs, including first declarations and batch appends in qualified containers. AI supplies body/reference edits; see [validation](references/validation.md).
 
 s17 adds offline internal project-FB instances, including first declarations and batch appends. AI supplies body/reference edits; native defaults and existing records stay protected. See [validation](references/validation.md).
@@ -105,7 +107,7 @@ s13 includes the MIT license in the complete package and integrity manifest; bac
 
 s12 adds existing structure member renames with associated native initializer-key updates. Source references remain under the caller’s control.
 
-Backend **1.03** · Skill **2026-10-28.s18**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
+Backend **1.03** · Skill **2026-10-28.s19**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
 
 s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
 
@@ -202,6 +204,8 @@ python -B "$skill/examples/offline_smoke.py" --output $out
 
 ### 版本记录
 
+s19补齐FBI已有实例的名称、注释和初值编辑。文件模式由调用者处理引用，编辑器模式记录IDE实际引用更新；见[用法](references/data-editing.md#fbi已有实例编辑)和[验收](references/validation.md)。
+
 s18补齐方法一全局FBI项目FB实例的空表首项和批量追加，保留已有记录、容器和未分配地址保护；正文由AI组织，见[验收](references/validation.md)。
 
 s17补齐方法一内部项目FB实例的空表首项和批量新增。正文/引用由AI组织，工具准确生成原生默认记录并保护旧记录，见[验收](references/validation.md)。
@@ -216,7 +220,7 @@ s13将MIT许可证纳入完整包及校验清单，后台功能保持。
 
 s12增加已有结构成员改名与必要原生初始化键同步；正文引用由调用者处理。
 
-后台 **1.03** · Skill **2026-10-28.s18**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
+后台 **1.03** · Skill **2026-10-28.s19**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
 
 s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
 

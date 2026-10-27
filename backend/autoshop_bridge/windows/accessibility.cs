@@ -190,8 +190,70 @@ public static class BridgeAccessibility {
   }while(selected.ElapsedMilliseconds<milliseconds);
   throw new Exception("Requested cell is not actually selected before timeout");
  }
+ static readonly string[] InitialColumns={"变量名","初始值","类型","注释","全名","软元件地址","分配地址"};
+ static List<Dictionary<string,string>> InitialRows(IntPtr main,IntPtr target,int pid,string project,string instance){
+  uint actual;GetWindowThreadProcessId(main,out actual);if(actual!=pid)throw new Exception("Initial-value main process changed");
+  GetWindowThreadProcessId(target,out actual);
+  string title=Text(main);
+  if(actual!=pid || !IsChild(main,target) || Class(target)!="VSFlexGrid8N" || !IsWindowEnabled(main) ||
+   !title.StartsWith("AutoShop V4.11.0.5  ",StringComparison.Ordinal) || title.IndexOf("  "+project+" - [",StringComparison.OrdinalIgnoreCase)<0)throw new Exception("Initial-value project/control differs");
+  bool toolbox=false;for(IntPtr p=GetParent(target);p!=IntPtr.Zero && p!=main;p=GetParent(p))if(Text(p)=="工具箱")toolbox=true;
+  if(!toolbox)throw new Exception("Initial-value grid is outside toolbox");
+  Node root=Root(target);int count=root.ChildCount,offset=InitialColumns.Length;
+  if(count<offset+2 || count>offset+4097)throw new Exception("Unsupported initial-value row count");
+  for(int c=0;c<offset;c++)if(root.ChildAt(c).Role!=25 || root.ChildAt(c).Name!=InitialColumns[c])throw new Exception("Initial-value columns differ");
+  var rows=new List<Dictionary<string,string>>();var fullNames=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+  for(int i=offset;i<count;i++){
+   Node row=root.ChildAt(i);if(row.Role!=28 || row.ChildCount!=offset)throw new Exception("Initial-value row differs");
+   var values=new Dictionary<string,string>();
+   for(int c=0;c<offset;c++){Node cell=row.ChildAt(c);if(cell.Role!=29 || cell.Name!=InitialColumns[c])throw new Exception("Initial-value cell differs");values[InitialColumns[c]]=cell.Value;}
+   if(i==offset){for(int c=0;c<offset;c++)if(values[InitialColumns[c]]!=InitialColumns[c])throw new Exception("Initial-value header differs");continue;}
+   string full=values["全名"];
+   if(!fullNames.Add(full) || (rows.Count==0?!String.Equals(full,instance,StringComparison.OrdinalIgnoreCase):
+    !(full.StartsWith(instance+".",StringComparison.OrdinalIgnoreCase) || full.StartsWith(instance+"[",StringComparison.OrdinalIgnoreCase))))throw new Exception("Initial-value instance/member identity differs");
+   rows.Add(values);
+  }
+  if(root.ChildCount!=count)throw new Exception("Initial-value rows changed");
+  return rows;
+ }
+ static object InitialRun(string action,IntPtr main,IntPtr target,int pid,string project,string instance,string member,string expected){
+  var rows=InitialRows(main,target,pid,project,instance);
+  if(action=="instance_initial_read")return new Dictionary<string,object>{{"schema",1},{"scope","selected_instance_initial_members"},{"instance",instance},{"rows",rows}};
+  if(action!="instance_initial_select")throw new Exception("Unknown initial-value action");
+  int index=-1;string full=instance+"."+member;
+  for(int i=1;i<rows.Count;i++)if(String.Equals(rows[i]["全名"],full,StringComparison.OrdinalIgnoreCase)){if(index!=-1)throw new Exception("Ambiguous initial-value member");index=i;}
+  if(index<0 || rows[index]["初始值"]!=expected)throw new Exception("Initial-value member baseline differs or is not displayed");
+  Node root=Root(target);Node cell=root.ChildAt(InitialColumns.Length+1+index).ChildAt(1);
+  for(int attempt=0;attempt<64;attempt++){
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   int sx=x+w/2,sy=y+h/2;
+   if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)break;
+   if(w<=2 || h<=2)throw new Exception("Initial-value column is hidden");
+   if(sx<gx || sx>=gx+gw)Message(target,0x114,new UIntPtr(sx<gx?0u:1u),IntPtr.Zero);
+   else{int packed=((gx+gw/2)&0xffff)|(((gy+gh/2)&0xffff)<<16);Message(target,0x20a,new UIntPtr(sy<gy+20?0x00780000u:0xff880000u),new IntPtr(packed));}
+   System.Threading.Thread.Sleep(20);
+   rows=InitialRows(main,target,pid,project,instance);
+   if(index>=rows.Count || !String.Equals(rows[index]["全名"],full,StringComparison.OrdinalIgnoreCase) || rows[index]["初始值"]!=expected)throw new Exception("Initial-value member changed during reveal");
+   root=Root(target);cell=root.ChildAt(InitialColumns.Length+1+index).ChildAt(1);
+  }
+  Click(target,cell,false);
+  WaitForSelection(delegate{
+   var current=InitialRows(main,target,pid,project,instance);
+   if(index>=current.Count || !String.Equals(current[index]["全名"],full,StringComparison.OrdinalIgnoreCase) || current[index]["初始值"]!=expected)throw new Exception("Initial-value member changed after selection");
+   Node fresh=Root(target).ChildAt(InitialColumns.Length+1+index).ChildAt(1);
+   return (fresh.State&2)!=0;
+  },4000);
+  return "initial_member_selection_verified";
+ }
+ public static object ReadInstancePage(long mainValue,long targetValue,int pid,string project,string program,int offset,int limit){
+  IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);
+  Validate(main,target,pid,project,program,false);
+  object result=BridgeGridReader.ReadInstancePage(new GridSource(Root(target)),offset,limit);
+  Validate(main,target,pid,project,program,false);return result;
+ }
  public static object Run(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);bool keyboardContext=action=="tree_context_keyboard";
+  if(action=="instance_initial_read" || action=="instance_initial_select")return InitialRun(action,main,target,pid,project,variable,column,expected);
   bool tree=action=="open" || action=="tree_context" || keyboardContext || action=="tree_nodes" || action=="tree_inventory";
   Validate(main,target,pid,project,program,tree);Node root=Root(target);
   if(action=="grid_columns"){

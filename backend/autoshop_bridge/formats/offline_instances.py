@@ -1,6 +1,7 @@
-"""Qualified FBI append candidates; never construct archives or allocate memory."""
+"""Qualified FBI add/set candidates; preserve archives and existing metadata."""
 
 import struct
+from itertools import groupby
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import empty_table, fb, instances, tables
@@ -26,7 +27,7 @@ def _layout(raw):
     empty = raw[:start] + struct.pack("<I", 0) + raw[end:]
     if empty_table.instance_segment(empty) != (start, start + 4):
         raise FormatRejection(
-            "FBI additions require the observed paired-table archive layout.",
+            "FBI mutations require the observed paired-table archive layout.",
             code="offline_unsupported_fbi_layout",
             context=dict(field="opaque_container", profile=PROFILE,
                          record_segment_offset=start, record_segment_bytes=end-start),
@@ -34,7 +35,7 @@ def _layout(raw):
     return document, start, end
 
 
-def rebuild(raw, operations, definitions=None):
+def _append(raw, operations, definitions=None):
     """Append default project-FB records, preserving every old/opaque byte.
 
     Definitions are exact registered LiteST FB bytes, frozen by the caller.
@@ -97,4 +98,98 @@ def rebuild(raw, operations, definitions=None):
         a, b = old["record_offset"], new["record_offset"]
         if raw[a:a+old["record_bytes"]] != result[b:b+new["record_bytes"]]:
             raise BridgeError("FBI candidate changed an existing instance record.")
+    return result
+
+
+def field_values(raw, row):
+    """Exact native string fields/spans in one already parsed instance record."""
+    reader = fb.Reader(raw, row["record_offset"], row["record_offset"] + row["record_bytes"])
+    if (reader.u32(), reader.u32()) != (256, 256):
+        raise BridgeError("Unsupported FBI field descriptor.")
+    spans = {}
+    for field in ("name", "initial_value"):
+        start = reader.pos
+        value = reader.string()
+        spans[field] = (start, reader.pos, value)
+    reader.take(8)  # Existing flags/address remain uninterpreted bytes.
+    start = reader.pos
+    value = reader.string()
+    spans["comment"] = (start, reader.pos, value)
+    return spans
+
+
+def _field_text(value, field):
+    if not isinstance(value, str):
+        raise BridgeError("FBI field values must be explicit strings; clear with an empty string.")
+    try:
+        return tables.string(value)
+    except (UnicodeError, BridgeError) as exc:
+        raise FormatRejection(str(exc), code="offline_unsupported_fbi_field_text",
+                              context=dict(field=field, representation="native_utf8_carchive_string")) from exc
+
+
+def edit_fields(raw, operations):
+    """Replace requested native strings only; no initializer grammar/semantics.
+
+    Initializers can include the native control separators and nested contents.
+    No dependency, reference or business validation is performed. The native
+    string encoder and full parser enforce representation/identity boundaries.
+    """
+    if not isinstance(operations, list) or not 1 <= len(operations) <= 32:
+        raise BridgeError("Expected 1..32 explicit FBI field edits.")
+    before, start, end = _layout(raw)
+    rows = before["instances"]
+    records = [raw[r["record_offset"]:r["record_offset"]+r["record_bytes"]] for r in rows]
+    values = [dict(name=r["name"], comment=r["comment"], initial_value=r["initial_value_raw"]) for r in rows]
+    for index, op in enumerate(operations):
+        if (not isinstance(op, dict) or set(op) != {"op", "name", "field", "expected", "value"}
+                or op.get("op") != "set" or op.get("field") not in ("name", "comment", "initial_value")):
+            raise BridgeError("FBI set requires exact name/field/expected/value; fields: name, comment, initial_value.")
+        matches = [i for i, value in enumerate(values) if value["name"] == op["name"]]
+        if len(matches) != 1:
+            raise BridgeError("FBI set requires one exact current instance name.")
+        i = matches[0]
+        field = op["field"]
+        old = values[i][field]
+        if not isinstance(op["expected"], str) or op["expected"] != old:
+            raise FormatRejection("FBI field baseline differs: {}.{}".format(op["name"], field),
+                                  code="offline_conflict", context=dict(variable=op["name"], field=field,
+                                                                        operation_index=index))
+        encoded = _field_text(op["value"], field)
+        if field == "name" and (not op["value"].isidentifier() or any(
+                j != i and v["name"].casefold() == op["value"].casefold() for j, v in enumerate(values))):
+            raise BridgeError("Invalid/duplicate native FBI instance name.")
+        if old == op["value"]:
+            continue
+        local_row = dict(rows[i], record_offset=0, record_bytes=len(records[i]))
+        a, b, actual = field_values(records[i], local_row)[field]
+        if actual != old:
+            raise BridgeError("FBI field plan and current record differ.")
+        records[i] = records[i][:a] + encoded + records[i][b:]
+        values[i][field] = op["value"]
+    result = raw[:start+4] + b"".join(records) + raw[end:]
+    if len(result) > MAX_NATIVE_SIZE:
+        raise BridgeError("FBI field candidate exceeds size limit.")
+    after, new_start, new_end = _layout(result)
+    if new_start != start or result[:start+4] != raw[:start+4] or result[new_end:] != raw[end:]:
+        raise BridgeError("FBI field candidate changed its count or opaque containers.")
+    for old, new, expected, record in zip(rows, after["instances"], values, records):
+        if (new["name"] != expected["name"] or new["comment"] != expected["comment"]
+                or new["initial_value_raw"] != expected["initial_value"]
+                or any(new[k] != old[k] for k in ("data_type", "type_text_raw", "type_code", "display_order", "uninterpreted_metadata"))
+                or result[new["record_offset"]:new["record_offset"]+new["record_bytes"]] != record):
+            raise BridgeError("FBI field candidate failed complete record verification.")
+    return result
+
+
+def rebuild(raw, operations, definitions=None):
+    """Sequential add/set groups, preserving s18 append behavior and old bytes."""
+    if not isinstance(operations, list) or not 1 <= len(operations) <= 32:
+        raise BridgeError("Expected 1..32 explicit FBI operations.")
+    if any(not isinstance(op, dict) or op.get("op") not in ("add", "set") for op in operations):
+        raise BridgeError("FBI supports explicit add/set; deletion uses the existing separate request.")
+    result = raw
+    for kind, group in groupby(operations, key=lambda op: op["op"]):
+        batch = list(group)
+        result = _append(result, batch, definitions) if kind == "add" else edit_fields(result, batch)
     return result
