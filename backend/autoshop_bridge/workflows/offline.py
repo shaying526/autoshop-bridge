@@ -18,7 +18,7 @@ from autoshop_bridge.errors import BridgeError, ConflictError, FormatRejection
 from autoshop_bridge import storage
 from autoshop_bridge.formats import fb, fc, st, tables, instances, declaration_delete
 from autoshop_bridge.formats.offline_source import (
-    ST_ZERO_ROWS_V1, FB_PRESERVE_ROWS_V1, rebuild_zero_row_st, rebuild_preserved_row_fb,
+    ST_FOLD_ROWS_V1, FB_PRESERVE_ROWS_V1, rebuild_fold_row_st, rebuild_preserved_row_fb,
 )
 from autoshop_bridge.formats.offline_variables import rebuild_fb
 from autoshop_bridge.projects import inventory, deletion_preflight
@@ -304,7 +304,7 @@ def default_candidate_builder(entry, raw, source, definitions):
         result = rebuild_fb(raw, entry["variable_operations"], definitions) if "variable_operations" in entry else raw
         return rebuild_preserved_row_fb(result, source, profile=FB_PRESERVE_ROWS_V1) if source is not None else result
     if suffix == ".st" and "variable_operations" not in entry and source is not None:
-        return rebuild_zero_row_st(raw, source, profile=ST_ZERO_ROWS_V1)
+        return rebuild_fold_row_st(raw, source, profile=ST_FOLD_ROWS_V1)
     if suffix == ".fc" and source is None and "variable_operations" in entry:
         from autoshop_bridge.formats.offline_fc import rebuild
         return rebuild(raw, entry["variable_operations"])

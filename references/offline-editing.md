@@ -66,7 +66,9 @@ FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制
 
 GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。空GVT首项仍未验。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
 
-ST增删行仅适用于已识别的全零未知行字段profile，重建长度和顺序行记录；非零未知字段或滞后行表拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已被刷新。FC增删行及LD写入不属于本入口；稳定旧build/apply限制保持。
+ST增删行支持原全零profile及s15已识别的词法折叠缓存profile（depth/header/expanded）。按相同逻辑行迁移原记录，删除行移除记录，新增/替换行用正常IDE已观察的中性记录；重建UTF8字节长度、LF+1计数及顺序索引，前缀保持。AutoShop加载/保存自行刷新词法缓存，不证明业务语法。未知值返回offline_unsupported_st_row_metadata，error_context有target、line（1起）、row_index、field、value、byte_offset、profile和reason；不清零未知字段或压成单行。滞后ST行表仍拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已刷新。FC增删行及LD写入不属于本入口；稳定旧build/apply限制保持。
+
+s15实际37→28行的MAIN候选已在独立副本check/build/apply、恢复全115哈希、重放、重开完整回读及编译0错误；增行至30、删至27及回到原28行候选也已正式离线写入/重开回读。原结构/FB不重写，正文/引用及多文件安排由调用者负责。见[专项报告](validation.md)。请求仍为`{"schema":1,"targets":[{"file":"MAIN.ST","source_file":"MAIN-candidate.st"}]}`，source_file是相对changes.json的路径，不更换命令或额外传profile；用户需从实际工程重新export取得本轮基线。
 
 ## HCP占用时的目标正文凭据
 
