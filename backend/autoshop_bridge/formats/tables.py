@@ -211,8 +211,6 @@ class Table:
                 "Expected a list of at most 32 explicit table operations."
             )
         result = self.raw
-        if self.kind == "gvt" and not self.rows and operations:
-            raise BridgeError("Empty GVT recognition is read-only; file-mode initialization is not validated.")
         for op in operations:
             current = parse(result, self.kind)
             if not isinstance(op, dict):
@@ -263,9 +261,9 @@ class Table:
                         + string(op["comment"])
                     )
                 else:
-                    # Default flags/tail observed in new BOOL/INT and existing
-                    # ordinary DINT records. DINT additions await live acceptance.
-                    # the IDE/compiler allocates addresses, never this encoder.
+                    # Empty/nonempty BOOL/INT/DINT saves share this observed
+                    # default record. The IDE/compiler allocates addresses,
+                    # never this encoder; the opaque table prefix stays intact.
                     encoded = (
                         struct.pack("<II", code, code)
                         + string(op["name"])

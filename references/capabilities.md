@@ -1,5 +1,7 @@
 # 能力和证据边界
 
+s16补齐严格空GVT：BOOL/INT/DINT首项及追加两模式可用；已有扁平结构首项/第二项文件模式用offline，编辑器用table-editor-edit。空表结构dry-run报告延后选择器预检且不创建行，真实执行先备份和默认行核对；仅结构表后续追加不再强制已有标量。未知空布局及新空白工程HCPP资格另待，见[变量与表](data-editing.md)、[验收](validation.md)。
+
 s15支持offline系列的已识别ST非零词法折叠缓存及增删行，原全零profile保持；相同逻辑行保留字段，新行中性初始化，未知值返回具体行/字段/值。独立37→28候选、增删行与完整回读/编译证据见[验收](validation.md)及[离线用法](offline-editing.md)。不增加自动业务引用同步。
 
 s14补齐严格空FBI编辑器首项/第二项、dry-run延后预检和两模式删空；正式保存/重开/完整回读及恢复编译证据见[验收说明](validation.md)。不因旧引用阻止删除，不生成未知原生容器。
@@ -10,7 +12,7 @@ s11新增FC标量声明：方法二空表首项/第二项正常保存、重开�
 
 s10仅修复既有正文凭据路径：关闭捕获的直接HCP、当前进程/对象树、全部冻结文件及干净目标正文联合校验；HCP不可读时旧镜像差异仅作提示，不替换依赖集合。返回current_hcp_verified=false及有界registration_hint差异，不能显示为实时HCP已读取。独立副本真实捕获→同进程打开→读取→注释保存→完整回读通过；保存后旧凭据仍拒绝。其他类型目录/创建/离线资格不变，详见[凭据说明](offline-editing.md)。
 
-s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及FBI。FB/FC/GVT/FBI可在已观察严格profile删空，STRU保留至少一成员；空FBI编辑器首项/第二项已实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。混合结构成员注释、嵌套/数组、空GVT首项、FC离线增删正文行的限制保持。新CLI不增加service.__all__入口。
+s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及FBI。FB/FC/GVT/FBI可在已观察严格profile删空，STRU保留至少一成员；空FBI编辑器首项/第二项已实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。混合结构成员注释、嵌套/数组及FC离线增删正文行的限制保持；空GVT首项已在s16补齐。新CLI不增加service.__all__入口。
 
 整理方式：AI 根据后台1.03代码、公共接口及既有验收报告整理  
 当前状态：s9修复结构初值注释误拒绝；后台现场证据与本包合成验证分开  

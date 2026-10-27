@@ -1,5 +1,7 @@
 # 关闭工程后的离线编辑
 
+s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局、新空白工程未知HCPP资格另待。
+
 整理方式：AI 根据实现与独立副本验证整理  
 当前状态：CLI 1.03实验扩展；独立副本加载、正文/表回读和编译通过，发布包另做完整性验证  
 最后更新：2026-10-26
@@ -64,7 +66,7 @@ FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制
 
 开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；通用离线新增仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
 
-GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。空GVT首项仍未验。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
+GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。s16严格已识别空GVT也支持BOOL/INT/DINT和上述结构首项/后续追加，完整空容器前缀保持，未分配地址不复制。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
 
 ST增删行支持原全零profile及s15已识别的词法折叠缓存profile（depth/header/expanded）。按相同逻辑行迁移原记录，删除行移除记录，新增/替换行用正常IDE已观察的中性记录；重建UTF8字节长度、LF+1计数及顺序索引，前缀保持。AutoShop加载/保存自行刷新词法缓存，不证明业务语法。未知值返回offline_unsupported_st_row_metadata，error_context有target、line（1起）、row_index、field、value、byte_offset、profile和reason；不清零未知字段或压成单行。滞后ST行表仍拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已刷新。FC增删行及LD写入不属于本入口；稳定旧build/apply限制保持。
 

@@ -1,5 +1,7 @@
 # 变量、结构、全局表与实例
 
+s16支持严格空GVT首项/第二项：标量使用下文普通add清单，结构initial_value:null，编辑器走table-editor-edit，文件模式走offline系列。空结构dry-run不创建行或备份，selector_preflight=pending_first_default_row；实际执行先核对IDE默认BOOL行并预检真实选择器。失败可能留已知未保存行，先完整回读，不重放。仅结构表也可继续追加；不改地址/前缀，不放宽未知空布局或登记资格。
+
 已有结构成员改名支持field=name，使用[工程级改名与关联元数据](structure-renaming.md)。正文引用由AI另改并编译；table-apply不会只写结构后留下已知旧初值成员键。
 
 CLI 1.03补充：[关闭工程离线开发](offline-editing.md)处理已登记ST/FB增删行、FB空表首次标量/结构端口及GVT结构新增，必须采用独立offline工作目录/命令。下文旧正文或table入口的限制仍适用，不给旧build/apply添加不存在的参数，也不编辑只读variables.json。
@@ -49,7 +51,7 @@ python -B $bridge table-check $tableWork
 ]}
 ```
 
-结构成员add只有op/name/data_type/comment；GVT新增标量还需initial_value字符串。普通BOOL/INT/DINT可新增，BOOL用ON/OFF，INT/DINT用规范十进制；结构定义没有初值/保持/地址。方法二的非空GVT还支持已登记非空扁平结构，initial_value必须null；方法一结构新增走offline系列，旧table-check/build/apply仍不接受结构新增。已有初值set只限支持的标量，旧接口不能改已有名称/类型/保持/地址或删除。
+结构成员add只有op/name/data_type/comment；GVT新增标量还需initial_value字符串。普通BOOL/INT/DINT可新增，BOOL用ON/OFF，INT/DINT用规范十进制；结构定义没有初值/保持/地址。方法二的空/非空GVT还支持已登记非空扁平结构，initial_value必须null；方法一结构新增走offline系列，旧table-check/build/apply仍不接受结构新增。已有初值set只限支持的标量，旧接口不能改已有名称/类型/保持/地址或删除。
 
 文件路径：`table-build WORK --output NEW_CANDIDATE --experimental`生成独立候选；`table-apply WORK --experimental`备份后覆盖。用户需安排重开工程加载，再编译。
 

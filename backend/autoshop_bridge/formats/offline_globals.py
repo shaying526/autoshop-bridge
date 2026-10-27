@@ -53,8 +53,6 @@ def rebuild(raw, operations, structure_definitions=None):
     result = raw
     for op in operations:
         table = tables.parse(result, "gvt")
-        if not table.rows:
-            raise BridgeError("Empty GVT initialization remains unvalidated.")
         if not isinstance(op, dict):
             raise BridgeError("GVT operation must be an object.")
         if op.get("op") == "add":

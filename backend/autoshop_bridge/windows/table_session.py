@@ -93,7 +93,7 @@ def assert_native_table(obj, rows):
                 raise BridgeError("Table editor/native allocation address differs.")
 
 
-def add_row(adapter, before, op, kind, complex_type=False):
+def add_row(adapter, before, op, kind, complex_type=False, preflight_types=()):
     """Append via the IDE, verify observed defaults and every committed field."""
     actual = adapter.set_cell("#row:" + str(len(before) + 1), "name", "", op["name"])
     if len(actual) != len(before) + 1 or actual[:-1] != before:
@@ -118,6 +118,13 @@ def add_row(adapter, before, op, kind, complex_type=False):
     if row != expected:
         raise BridgeError("Unsupported new table row defaults.")
     desired = copy.deepcopy(actual)
+    choices = None
+    if preflight_types:
+        choices = adapter.selector_choices(op["name"], "data_type", "BOOL")
+        if any(choices.count(name) != 1 for name in preflight_types):
+            raise BridgeError("Requested project structure is unavailable or ambiguous after the first default row; inspect unsaved buffer.")
+        if adapter.grid() != desired or not adapter.dirty():
+            raise BridgeError("Deferred type-selector preflight changed the first-row buffer.")
 
     def commit(field, old, value):
         updated = adapter.set_cell(op["name"], field, old, value)
@@ -130,7 +137,8 @@ def add_row(adapter, before, op, kind, complex_type=False):
         if complex_type:
             if kind != "gvt" or op.get("initial_value", "missing") is not None:
                 raise BridgeError("Complex GVT additions require null IDE initialization.")
-            choices = adapter.selector_choices(op["name"], "data_type", "BOOL")
+            if choices is None:
+                choices = adapter.selector_choices(op["name"], "data_type", "BOOL")
             if choices.count(op["data_type"]) != 1 or adapter.grid() != desired:
                 raise BridgeError("Complex table type selector differs from the preflight.")
             updated = adapter.set_cell(op["name"], "data_type", "BOOL", op["data_type"])

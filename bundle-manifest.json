@@ -2,17 +2,17 @@
   "schema": 1,
   "name": "autoshop-bridge",
   "mode": "portable-bundled-runtime",
-  "skill_revision": "2026-10-27.s15",
+  "skill_revision": "2026-10-27.s16",
   "backend_version": "1.03",
   "license": "MIT",
   "generated_references": {
     "references/offline-editing.md": {
       "source": "docs/OFFLINE_DEVELOPMENT.md",
-      "source_sha256": "df461e2e29e86b3089e20c14e099195d86fce967dcea5bd49f988be04da27a85",
+      "source_sha256": "3cd84ce4ca3506a6dd3157758b12568ae2c1a46fd82987104d429069ace4dcaf",
       "transformation": "relocate_local_reference_links_only"
     }
   },
-  "source_commit": "dc1988931841cfedca681ddced9667648905fa7b",
+  "source_commit": "a107b55db886a9eaaf1a381af178109d3a20bfa3",
   "backend_origin": "canonical development source; generated snapshot, not a second maintained implementation",
   "redactions": [
     {
@@ -35,14 +35,14 @@
     "autoshop_bridge/formats/instances.py": "12d3019c7eaa88bbdcf67bc51151e80439132a443eeb16724852d78ae080c671",
     "autoshop_bridge/formats/native.py": "80a0000b7c7f60da40f9965fcf673c367f47fed1f2775ad290bc39961cd26c09",
     "autoshop_bridge/formats/offline_fc.py": "31e2a8cdb4a225309ebe2de877ce874424d12a1c233161fd208da9a1e8dcd224",
-    "autoshop_bridge/formats/offline_globals.py": "f90b9425a17c05ae851069d18dbd3d4b3a3c1a5b25ebd5359a13d3e749062b5b",
+    "autoshop_bridge/formats/offline_globals.py": "d4d62ab7ab0a51702a31c42473f39cee86d71a1cc1ae21d2e4137cb67300e24c",
     "autoshop_bridge/formats/offline_source.py": "543ab8490b89159b19fa009c022ec5473b30a4b95878395528c3343f195c7b5b",
     "autoshop_bridge/formats/offline_variables.py": "c850cd650a0a065dca0860bd7922f3c642a441164781a282565bbf726c4afe0b",
     "autoshop_bridge/formats/st.py": "0c4f7afbc84ffc30b3182eb0889cbd56e5245f789d514b0c69501dc8b4632fe8",
     "autoshop_bridge/formats/structure.py": "c8edc8af14204641d671ca23466ba9a69e46f950508c86c20d01f022345f1b89",
     "autoshop_bridge/formats/structure_rename.py": "4e0f6fb990d2fea80cf593172aacccdce5696974cdf9ef052b4792ba6089ef1f",
     "autoshop_bridge/formats/system_variables.py": "439baf08bb27d6305505675fb35c2ddc780098f588f97646ffb50f3bdd8cbd5c",
-    "autoshop_bridge/formats/tables.py": "c5c5d6d371b16dc6d1120e2001b06c4c5dbade7ee74bc4553e6ae08bf3dfe791",
+    "autoshop_bridge/formats/tables.py": "476ee887f2375354872bb86efeebe479263cb9bfb7749cd0bc479b90b1882997",
     "autoshop_bridge/projects/__init__.py": "951dffd84d433d5bc6d51c30788eab5e7d88025cd4630d652e04d2013a12a49e",
     "autoshop_bridge/projects/deletion_preflight.py": "ec30ce965ad3aea591ae4fcd1643139e4d443ff2af82f822756d42e24f7d1764",
     "autoshop_bridge/projects/identifiers.py": "a7b95bee78e90abe27bd92e7607bcf7f75f65c118a78bc1c5c248f3759e41be9",
@@ -72,7 +72,7 @@
     "autoshop_bridge/windows/project_lifecycle.py": "3426d5f6a23ceb820734bd1f8b1a51a905915a4babbf11f26846d014485a25ba",
     "autoshop_bridge/windows/registration_observer.py": "81354bc37afdf50933a56d331bf0039e6c5140a7e5f1c150329ac4c880f96480",
     "autoshop_bridge/windows/session.py": "624048edc005d821f6eeedbb0ccf46191ace331a8203a5a68c5783ffa2f22d95",
-    "autoshop_bridge/windows/table_session.py": "3698c3443051ff1052855570b5b7898314512a95b045b494c6f83419fb43864e",
+    "autoshop_bridge/windows/table_session.py": "047ddbd7f1d07043a6fefdb633740d6dc3c33585969ccb9e2b27dae04604b6b8",
     "autoshop_bridge/windows/variables.py": "b55f76af64eb05f2bb38e8cb76f3801b163a1d4978e839f7087caba46321a854",
     "autoshop_bridge/workflows/__init__.py": "791153a5eed3a9e773b6d93e081fd9b48ce54e0a2e7928d2fdec72311a68bd72",
     "autoshop_bridge/workflows/builds.py": "86c1eca53583707f33ebd6207c0b33f0a887bc4f0008ebf8bba76dd5c9d22e37",
@@ -82,7 +82,7 @@
     "autoshop_bridge/workflows/offline.py": "36b45610bca9cbf65864134cd47d9d559060ccd6124d185c4428c6afc9be27d4",
     "autoshop_bridge/workflows/source.py": "90d5b60ea3bb9fcd2f063dece29c8151ac4697c40ecbafa3c022d49c1ce9b471",
     "autoshop_bridge/workflows/structure_rename.py": "0661cc62f99bfcc4f8fbb7f97b84e621f9a769aa5f0d61d7ce7abe1e84bb5731",
-    "autoshop_bridge/workflows/tables.py": "99fd54c725f3a83a99c9a2a03359d853e1705f841a17c75a8ee5e1d577f29538",
+    "autoshop_bridge/workflows/tables.py": "c36efe30d0b185da914e46a538049649bd5f451e6412fc32ea56a28f62488965",
     "autoshop_bridge_cli.py": "6dee6e756f1838c4e77e407196ed8cd3d892d44bae1cc3ac2028f8a8db8f7fa9",
     "tools/diagnostics/inspect_autoshop_ladder.py": "ed38363bbc97bc38a9f5629134765846153a596cccac61c3d8d2f8682d6349f0",
     "tools/diagnostics/inspect_autoshop_ladder_editor.py": "7a6d116337b6452bf0f6df0b2ebae97bb86870fa6fdb16748b4ea10e8aca8013",
@@ -97,11 +97,11 @@
       "bytes": 1067
     },
     "README.md": {
-      "sha256": "b83b36257b4c816afd86235f6a3d0a0cd5553de7ca4ed41fce9701485706816d",
-      "bytes": 18407
+      "sha256": "4132030cfaf340dd268ef224d1e1493420cd380416b5248cc851ce5d6fb02dc8",
+      "bytes": 18810
     },
     "SKILL.md": {
-      "sha256": "02ecc5d781234b03bb16cfcd7da7f18995f9a77203f42562123aa34465b9a782",
+      "sha256": "fa925bd5fdc916b539c6f5d3168a320fe2166483ca283bc45eba3dd531c5c1c6",
       "bytes": 8314
     },
     "backend/autoshop_bridge/__init__.py": {
@@ -153,8 +153,8 @@
       "bytes": 3941
     },
     "backend/autoshop_bridge/formats/offline_globals.py": {
-      "sha256": "f90b9425a17c05ae851069d18dbd3d4b3a3c1a5b25ebd5359a13d3e749062b5b",
-      "bytes": 5077
+      "sha256": "d4d62ab7ab0a51702a31c42473f39cee86d71a1cc1ae21d2e4137cb67300e24c",
+      "bytes": 4971
     },
     "backend/autoshop_bridge/formats/offline_source.py": {
       "sha256": "543ab8490b89159b19fa009c022ec5473b30a4b95878395528c3343f195c7b5b",
@@ -181,8 +181,8 @@
       "bytes": 8327
     },
     "backend/autoshop_bridge/formats/tables.py": {
-      "sha256": "c5c5d6d371b16dc6d1120e2001b06c4c5dbade7ee74bc4553e6ae08bf3dfe791",
-      "bytes": 14076
+      "sha256": "476ee887f2375354872bb86efeebe479263cb9bfb7749cd0bc479b90b1882997",
+      "bytes": 13891
     },
     "backend/autoshop_bridge/projects/__init__.py": {
       "sha256": "951dffd84d433d5bc6d51c30788eab5e7d88025cd4630d652e04d2013a12a49e",
@@ -301,8 +301,8 @@
       "bytes": 25858
     },
     "backend/autoshop_bridge/windows/table_session.py": {
-      "sha256": "3698c3443051ff1052855570b5b7898314512a95b045b494c6f83419fb43864e",
-      "bytes": 9639
+      "sha256": "047ddbd7f1d07043a6fefdb633740d6dc3c33585969ccb9e2b27dae04604b6b8",
+      "bytes": 10183
     },
     "backend/autoshop_bridge/windows/variables.py": {
       "sha256": "b55f76af64eb05f2bb38e8cb76f3801b163a1d4978e839f7087caba46321a854",
@@ -341,8 +341,8 @@
       "bytes": 9702
     },
     "backend/autoshop_bridge/workflows/tables.py": {
-      "sha256": "99fd54c725f3a83a99c9a2a03359d853e1705f841a17c75a8ee5e1d577f29538",
-      "bytes": 20631
+      "sha256": "c36efe30d0b185da914e46a538049649bd5f451e6412fc32ea56a28f62488965",
+      "bytes": 20833
     },
     "backend/autoshop_bridge_cli.py": {
       "sha256": "6dee6e756f1838c4e77e407196ed8cd3d892d44bae1cc3ac2028f8a8db8f7fa9",
@@ -381,12 +381,12 @@
       "bytes": 8541
     },
     "references/capabilities.md": {
-      "sha256": "e3c8b3bc494b875f0326556c3f00a77ba7c6c40cbbc54d1bab9f06322e226fef",
-      "bytes": 9521
+      "sha256": "9e1e80dc347c3f43b01b11b3707d983391373561cdba2d40e6230346c255207c",
+      "bytes": 9971
     },
     "references/data-editing.md": {
-      "sha256": "d74bd40632e16ad890e63a586b7d7cccef1ffe4aa4b9fcd386e3afc06cd5b661",
-      "bytes": 8584
+      "sha256": "89f14aa6c9dca4fa95209768b05b96ee54d5df06ee7d22c65b22d1804c455566",
+      "bytes": 9070
     },
     "references/declaration-editing.md": {
       "sha256": "3d21655f592d0049d701d0f5ffc16c6e9d95a69d01d0f0373e4028c0393358ae",
@@ -401,8 +401,8 @@
       "bytes": 7198
     },
     "references/offline-editing.md": {
-      "sha256": "da7b525d9b4898447859921daf4e55566bc9201ac0c4ffc87c74390467e6cde4",
-      "bytes": 15538
+      "sha256": "4f25df68e3283ed1f299fef398f9ed2989d544d26ace555605c4b48f6ce3c0d5",
+      "bytes": 16009
     },
     "references/source-editing.md": {
       "sha256": "d7eefa71401f5b38b176a861af90fc440f0cfd29273ce6f6f2445741f6ac3614",
@@ -413,8 +413,8 @@
       "bytes": 3680
     },
     "references/validation.md": {
-      "sha256": "2657651cc137bb0f58bd70a0369047a7a2c1f6328df21466e44b846ffbc91060",
-      "bytes": 8281
+      "sha256": "4420470000418b0cf8923b31d413a61c9e2eb286349e80e9fc28b8c0eaea6bb9",
+      "bytes": 8892
     },
     "scripts/check_bundle.py": {
       "sha256": "22ac32dd9ea5bd867234fb7aa7353277bb32922fdde3e4d77bd9880ffc0949af",

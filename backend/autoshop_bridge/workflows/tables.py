@@ -347,19 +347,19 @@ def editor_edit(
             raise BridgeError("Table editor has unsaved changes.")
         assert_native_table(obj, before)
         dependencies()
-        if complex_names:
-            probe = next((r for r in before if r["data_type"] in ("BOOL", "INT", "DINT")), None)
-            if probe is None:
-                raise BridgeError("Complex GVT additions require an existing scalar selector probe.")
+        requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in complex_names}
+        deferred_preflight = bool(complex_names) and not before
+        if complex_names and before:
+            probe = next((r for r in before if r["data_type"] in ("BOOL", "INT", "DINT")), before[0])
             choices = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
-            requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in complex_names}
             if any(choices.count(name) != 1 for name in requested_types):
                 raise BridgeError("Requested project structure is unavailable or ambiguous in the IDE selector.")
             if adapter.grid() != before or adapter.dirty():
                 raise BridgeError("Table changed during type selector preflight.")
         if dry_run:
             return dict(
-                status="table_editor_ready", row_count=len(before), edited=edited
+                status="table_editor_ready", row_count=len(before), edited=edited,
+                selector_preflight="pending_first_default_row" if deferred_preflight else "performed" if complex_names else "not_required",
             )
         if not edited:
             if close_after:
@@ -409,7 +409,8 @@ def editor_edit(
                     if actual != desired:
                         raise BridgeError("Full table readback differs after edit.")
                 else:
-                    desired = add_row(adapter, current, op, obj.kind, complex_type=op["name"] in complex_names)
+                    desired = add_row(adapter, current, op, obj.kind, complex_type=op["name"] in complex_names,
+                                      preflight_types=requested_types if deferred_preflight and not current else ())
                 current = desired
                 assert_hash(target, manifest["native_sha256"])
                 table_context.validate(manifest, ops, target)
