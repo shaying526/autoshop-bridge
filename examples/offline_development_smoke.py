@@ -36,6 +36,8 @@ def fixtures(project):
 
     (project / "Logic.FB").write_bytes(b"AutoShop" + b"\0" * 31 + string("Logic")
         + struct.pack("<II", 256, 0) + b"\0" * 4 + native(b"// initial") + b"\0" * 4)
+    (project / "TimerBlock.FB").write_bytes(b"AutoShop" + b"\0" * 51 + string("TimerBlock")
+        + struct.pack("<II", 256, 0) + b"\0" * 4 + native(b"// synthetic timer") + b"\0" * 4)
     (project / "MAIN.ST").write_bytes(native(b"// initial"))
     for name in ("InputData", "OutputData"):
         rows = b"".join(string("") + struct.pack("<I", code) + string(member) + string(comment)
@@ -60,7 +62,7 @@ def fixtures(project):
         for index, name in enumerate(("firstInstance", "secondInstance")))
     (project / "Instances.fbi").write_bytes(b"AutoShop-synthetic" + struct.pack("<I", 2)
         + instance_records + b"AutoShop-synthetic-opaque-suffix")
-    names = ("Logic.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
+    names = ("Logic.FB", "TimerBlock.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
              "Calc.FC", "EmptyCalc.FC", "Instances.fbi")
     xml = "<project>" + "".join('<file id="{}"><Caption>{}</Caption><FileName>{}</FileName></file>'.format(
         i, Path(name).stem, name) for i, name in enumerate(names)) + "</project>"
@@ -122,7 +124,9 @@ def run(output):
                     comment="Synthetic declaration", initial_value=value) for name, dtype, category, value in (
                         ("enabled", "BOOL", "VAR", "OFF"), ("command", "INT", "VAR", "0"),
                         ("value", "DINT", "VAR", "0"), ("request", "InputData", "INOUT", None),
-                        ("response", "OutputData", "INOUT", None))]
+                        ("response", "OutputData", "INOUT", None),
+                        ("timerFirst", "TimerBlock", "VAR", None),
+                        ("timerSecond", "TimerBlock", "VAR", None))]
                 changes = output / ("changes-" + label + ".json")
                 changes.write_text(json.dumps(dict(schema=1, targets=[
                     dict(file="Logic.FB", source_file=source.name, variable_operations=declarations),
@@ -145,8 +149,11 @@ def run(output):
                               "--backup-root", output / ("backups-" + label), "--experimental")
                 assert applied["status"] == "applied"
                 block = fb.parse((project / "Logic.FB").read_bytes())
-                assert len(block.variables) == 5 and block.source == source.read_bytes()
-                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3]
+                assert len(block.variables) == 7 and block.source == source.read_bytes()
+                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0]
+                assert all(row.type_code == 256 and row.type_text == "TIMERBLOCK"
+                    and row.initial_raw == "" and row.fields == (0, 1, 0xffffffff, 0)
+                    for row in block.variables[-2:])
                 assert block.line_count == 3 and block.line_table_count == 1
                 assert st.parse((project / "MAIN.ST").read_bytes()).source == source.read_bytes()
                 current = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
@@ -209,7 +216,8 @@ def run(output):
                     "--expect-receipt-sha256", digest(receipt), "--backup-root", output / ("restore-" + label), "--experimental")
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
-                    fb_five_variables=True, gvt_unallocated_structures=True, source_lines_added=True,
+                    fb_seven_variables=True, fb_internal_project_instances=True,
+                    gvt_unallocated_structures=True, source_lines_added=True,
                     fc_nonempty_and_empty_additions=True,
                     declaration_delete_five_kinds=True, stale_delete_replay_refused=True,
                     old_records_preserved=True, non_targets_preserved=True, restored_all_bytes=True,

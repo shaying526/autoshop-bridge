@@ -208,8 +208,9 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
         if (
             var.type_code != code
             or (
-                var.type_text != op["data_type"]
-                if code in (64, 256)
+                var.type_text not in (op["data_type"], op["data_type"].upper())
+                if code == 256 else var.type_text != op["data_type"]
+                if code == 64
                 else var.type_text not in ("", op["data_type"])
             )
             or var.fields
@@ -413,6 +414,13 @@ def edit(
                         actual = adapter.set_cell(
                             op["name"], "data_type", "BOOL", op["data_type"]
                         )
+                        # V4.11.0.5 normalizes newly selected project FB names
+                        # to uppercase. Accept only that observed spelling or
+                        # the exact selector name; all other row fields remain
+                        # part of the full-table comparison.
+                        if (context["types"].get(op["data_type"], {}).get("code") == 256
+                                and actual[-1]["data_type"] == op["data_type"].upper()):
+                            desired[-1]["data_type"] = op["data_type"].upper()
                         if (
                             op["data_type"] in ("INT", "DINT")
                             and op["category"] != "INOUT"

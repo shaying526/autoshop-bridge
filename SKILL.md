@@ -31,13 +31,13 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-27.s16`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-28.s17`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
 1. 先有界工程摘要；需要定义/引用时用`code-context`，按需导出和读片段，避免把整工程或窗口整表倾倒到上下文。已保存内容优先文件读取，磁盘不包含未保存缓冲。
    梯形图程序/FB读取改走[梯形图只读](references/ladder-reading.md)的随包独立脚本；已知文件绝对路径可直接读，不依赖HCP。先摘要，再分页读指定网络、引脚、连接和FB变量；不要用ST导出器或把默认scan的“仅识别”误当新读取入口。LD写入/排序仍未发布。
-2. 选择模式。工程已关闭，需要正文增删行、空FB首变量或GVT结构变量时，读[离线开发](references/offline-editing.md)，使用独立offline系列，不沿用旧build/apply的同LF限制，也不能放宽未知行字段。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
+2. 选择模式。工程已关闭，需要正文增删行、空FB首变量、内部项目FB实例或GVT结构变量时，读[离线开发](references/offline-editing.md)，使用独立offline系列，不沿用旧build/apply的同LF限制，也不能放宽未知行字段。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
 3. 正文任务按[正文编辑](references/source-editing.md)导出、核对基线、制作唯一原文补丁、预检并调用既有写入器。变量/表/实例新增修改改读[变量和表](references/data-editing.md)；明确删除改读[声明删除](references/declaration-editing.md)，使用独立declarations-read/editor-declarations-delete或offline入口，不向旧清单塞入delete。删除不查引用、不级联，语义交编译，完整性保护仍保留。不要把变量声明塞进正文或编辑只读快照。
 4. 逐条检查退出码及JSON状态后再继续。备份成功、当前原文/哈希和完整回读不能省。保存后重新导出用于后续修改；同一工程/会话串行执行。
 5. 分别报告缓冲更新、原生保存、回读、用户编译反馈和业务行为验证。只读或本地候选任务完成后，不额外写入/保存。

@@ -1,5 +1,7 @@
 # 能力和证据边界
 
+s17支持已登记LiteST FB内部VAR项目FB实例的文件新增，含空表首项与批量追加：initial_value:null，正常IDE已观察的大写类型文本/空默认记录，不复制初始化或地址。带结构接口、内部项目FB、已有库成员的引用定义已在独立副本加载/回读及组合编译0错误；调用正文由AI显式修改。方法二兼容实际大写显示，详见[离线用法](offline-editing.md)、[验收](validation.md)。
+
 s16补齐严格空GVT：BOOL/INT/DINT首项及追加两模式可用；已有扁平结构首项/第二项文件模式用offline，编辑器用table-editor-edit。空表结构dry-run报告延后选择器预检且不创建行，真实执行先备份和默认行核对；仅结构表后续追加不再强制已有标量。未知空布局及新空白工程HCPP资格另待，见[变量与表](data-editing.md)、[验收](validation.md)。
 
 s15支持offline系列的已识别ST非零词法折叠缓存及增删行，原全零profile保持；相同逻辑行保留字段，新行中性初始化，未知值返回具体行/字段/值。独立37→28候选、增删行与完整回读/编译证据见[验收](validation.md)及[离线用法](offline-editing.md)。不增加自动业务引用同步。

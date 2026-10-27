@@ -1,5 +1,7 @@
 # 关闭工程后的离线编辑
 
+s17补齐已登记LiteST FB内部VAR的项目FB实例新增，含空表首项和批量追加。使用下文原offline系列及完整保护，详见[内部实例专项](validation.md)。
+
 s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局、新空白工程未知HCPP资格另待。
 
 整理方式：AI 根据实现与独立副本验证整理  
@@ -27,6 +29,23 @@ python -B $bridge offline-restore --receipt-file $receipt --expect-receipt-sha25
 exported冻结直接HCP、所有现存登记文件和额外原生文件。没有独立文件的登记列入excluded_nonfile_registration；原本缺失的非原生配置列入declared_missing，必须保持不存在。两者不成为可写目标；缺失原生依赖拒绝。HCPP不签发离线写资格。export/check/build只读，不证明工程已关闭；apply/restore全程保持Windows独占只读HCP句柄。用户仍须关闭工程，独占句柄不能证明其他软件没有旧内存内容。
 
 checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
+
+## FB内部项目FB实例（s17）
+
+使用现有 `variable_operations`，目标为已登记LiteST FB，引用类型名取直接HCP登记与原生FB头的准确名称。工程关闭后按上文export → check → build → apply；不需要新命令或profile参数。
+
+```json
+{"schema":1,"targets":[{"file":"Controller.FB","variable_operations":[
+  {"op":"add","name":"timerA","data_type":"TimerBlock","category":"VAR","initial_value":null,"comment":"First timer"},
+  {"op":"add","name":"timerB","data_type":"TimerBlock","category":"VAR","initial_value":null,"comment":"Second timer"}
+]}]}
+```
+
+`Controller`和`TimerBlock`仅为合成名称，必须换成实际登记对象。空表和非空表采用相同清单；每个目标最多32项。新记录采用正常IDE保存已观察的类型码256、FB类型名大写形式（如TimerBlock→TIMERBLOCK）、空初始化串及VAR/不保持/未分配字段；初值必须null，显式复杂初值、FB类型的IN/OUT/INOUT、库名或LD FB的离线新增尚未实现。传入正确登记名，读回大写类型文本属于IDE原生规则，不手改类型文件或只读快照“修复”大小写。
+
+内部实例不使用全局FBI容器，不生成地址、传递布局或结构成员初始化串；已有记录的初始化、类型拼写、全部字段和顺序原样保留。仅验证本次所需FB定义的登记、可解析容器及准确头部，所有文件哈希仍被冻结。不因无关LD/FB未解析、引用FB中已有库/结构成员或正文尚未修完而拒绝这个已支持的记录新增；不推导编译语义或自动更新调用。正文引用由调用者另改；可在同一目标显式加入source_file，多文件安排同样由调用者组织，最终交AutoShop编译。
+
+重开工程后用editor-read完整核对正文、声明及未保存状态，编译另行执行。方法二同样接受已观察的FB类型大写显示，仍逐格核对整表和备份。编译通过不表示PLC行为已验证。
 
 ## 结构注释预检修复（2026-10-26 / s9）
 

@@ -85,13 +85,31 @@ def _record(op, definitions):
     initial = op["initial_value"]
     if code is None:
         if category not in ("VAR", "IN", "OUT", "INOUT") or dtype not in definitions or initial is not None:
-            raise BridgeError("Structure additions require an explicit definition and null initializer.")
-        code, type_text = 64, dtype
+            raise BridgeError("Named-type additions require an explicit definition and null initializer.")
         try:
-            initial = flat_structure_initial(definitions[dtype], dtype)
-        except FormatRejection as exc:
-            exc.context.update(variable=op["name"], category=category)
-            raise
+            block = fb.parse(definitions[dtype])
+        except BridgeError:
+            block = None
+        type_text = dtype
+        if block is not None:
+            if block.program_name != dtype or category != "VAR":
+                raise FormatRejection(
+                    "Project FB instances require the exact type identity and category VAR.",
+                    code="offline_unsupported_fb_instance",
+                    context=dict(variable=op["name"], data_type=dtype, category=category,
+                                 definition_name=block.program_name, field="category" if category != "VAR" else "data_type"),
+                )
+            # Normal V4.11.0.5 saves of project FBs with scalar and structure
+            # interfaces produce this empty default. No transitive initializer
+            # or layout/address is synthesized from the referenced definition.
+            code, type_text, initial = 256, dtype.upper(), ""
+        else:
+            code = 64
+            try:
+                initial = flat_structure_initial(definitions[dtype], dtype)
+            except FormatRejection as exc:
+                exc.context.update(variable=op["name"], category=category)
+                raise
     elif category == "INOUT":
         if initial is not None:
             raise BridgeError("INOUT requires a null independent initializer.")
@@ -108,8 +126,9 @@ def _record(op, definitions):
 def rebuild_fb(raw, operations, structure_definitions=None):
     """Return bytes with exact existing-record/prefix/embedded-object preservation.
 
-    ``structure_definitions`` maps exact type names to caller-validated native
-    STRU bytes. Registration and stale-hash checks belong to the caller. Neither
+    ``structure_definitions`` retains its historical argument name and maps
+    exact type names to caller-validated native STRU or LiteST FB bytes.
+    Registration and stale-hash checks belong to the caller. Neither
     addresses nor opaque tail fields can be supplied through this API.
     """
     if not isinstance(operations, list) or not 1 <= len(operations) <= 32:
@@ -120,7 +139,7 @@ def rebuild_fb(raw, operations, structure_definitions=None):
         raise BridgeError("Invalid Unicode in FB declaration.") from exc
     definitions = {} if structure_definitions is None else structure_definitions
     if not isinstance(definitions, dict):
-        raise BridgeError("Structure definitions must be an exact name/bytes mapping.")
+        raise BridgeError("Type definitions must be an exact name/bytes mapping.")
     result = raw
     for operation_index, op in enumerate(operations):
         before = fb.parse(result)

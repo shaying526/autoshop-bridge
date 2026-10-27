@@ -90,6 +90,10 @@ def assert_native_variables(container, rows):
     for index, (var, row) in enumerate(zip(container.variables, rows)):
         expected = var.as_dict(index)
         for field in ("name", "category", "data_type", "comment"):
+            if (field == "data_type" and var.type_code == 256
+                    and isinstance(expected[field], str)
+                    and row[field] == expected[field].upper()):
+                continue  # Observed IDE spelling; no native bytes are changed.
             if expected[field] is None or expected[field] != row[field]:
                 raise BridgeError(
                     "FB editor/native variable {} differs: {}.".format(index + 1, field)

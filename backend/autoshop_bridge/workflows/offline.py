@@ -357,6 +357,38 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
             if definition.name in definitions:
                 raise BridgeError("Duplicate structure definition identity.")
             definitions[definition.name] = blobs[name]
+    # The neutral FB-instance record contains an exact type name and an empty
+    # initializer, not a serialization of its dependency graph. Qualify only
+    # requested project FB definitions; unrelated LD/unknown bodies stay opaque
+    # protected bytes. Syntax, calls and recursive type use belong to compilation.
+    requested_fbs = {op["data_type"] for entry, _ in entries
+                     if Path(entry["file"]).suffix.lower() == ".fb"
+                     for op in entry.get("variable_operations", [])
+                     if isinstance(op, dict) and op.get("op") == "add"
+                     and isinstance(op.get("data_type"), str)}
+    for dtype in sorted(requested_fbs):
+        matches = [(name, row) for name, row in manifest["registered"].items()
+                   if row["state"] == "present" and Path(name).suffix.lower() == ".fb"
+                   and Path(name).stem.casefold() == dtype.casefold()]
+        if not matches:
+            continue  # Scalars/structures or an unsupported name, checked by encoder.
+        context = dict(data_type=dtype, definition_files=[name for name, _ in matches])
+        if len(matches) != 1 or Path(matches[0][0]).stem != dtype or any(
+                name.casefold() == dtype.casefold() for name in definitions):
+            raise FormatRejection("Ambiguous or nonexact registered FB type identity.",
+                                  code="offline_unsupported_fb_instance", context=context)
+        name, row = matches[0]
+        language, _ = inventory.program_language(".fb", row["file_type_raw"], row["program_type_raw"])
+        try:
+            if language == "LD":
+                raise BridgeError("LD FB instance construction has not been validated.")
+            definition = fb.parse(blobs[name])
+            if definition.program_name != dtype:
+                raise BridgeError("Registered filename and native FB type identity differ.")
+        except BridgeError as exc:
+            raise FormatRejection(str(exc), code="offline_unsupported_fb_instance",
+                                  context=dict(context, definition_file=name, original_error=str(exc))) from exc
+        definitions[dtype] = blobs[name]
     changed_structures = {tables.parse(blobs[entry["file"]], "stru").name.casefold()
                           for entry, _ in entries if Path(entry["file"]).suffix.lower() == ".stru"}
     project_names = {row["name"] for row in manifest["registered"].values() if row.get("name")}

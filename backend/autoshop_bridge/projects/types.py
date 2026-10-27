@@ -20,7 +20,7 @@ def catalog(project, requested, owner=None):
             definitions[name.casefold()] = row
     types, hashes, active = {}, {}, set()
 
-    def visit(name):
+    def visit(name, native_fb_reference=False):
         if name in SCALARS:
             return
         key = name.casefold()
@@ -29,11 +29,15 @@ def catalog(project, requested, owner=None):
                 "Recursive FB/structure containment is unsupported: " + name
             )
         row = definitions.get(key)
-        if not row or Path(row["path"]).stem != name or row.get("status") != "parsed":
+        canonical = Path(row["path"]).stem if row else None
+        if (not row or row.get("status") != "parsed"
+                or (canonical != name and not (native_fb_reference
+                    and row["kind"] == "function_block" and canonical.upper() == name))):
             raise BridgeError(
                 "Named type must be an exact registered, parsed project FB/structure: "
                 + str(name)
             )
+        name = canonical
         if name in types:
             return
         active.add(key)
@@ -46,7 +50,7 @@ def catalog(project, requested, owner=None):
             if code in (64, 256):
                 if not dtype:
                     raise BridgeError("Unresolved dependent type.")
-                visit(dtype)
+                visit(dtype, native_fb_reference=code == 256)
             elif (
                 code == 2048
                 and isinstance(dtype, str)
