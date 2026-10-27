@@ -91,11 +91,13 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 ### Version notes
 
+s14 adds editor first/second instances in recognized empty FBI tables and deletion to the observed empty profile in both modes. Save/reopen/full-readback and restoration compilation were verified in an independent copy; see [validation](references/validation.md).
+
 s13 includes the MIT license in the complete package and integrity manifest; backend behavior is unchanged.
 
 s12 adds existing structure member renames with associated native initializer-key updates. Source references remain under the caller’s control.
 
-Backend **1.03** · Skill **2026-10-27.s13**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
+Backend **1.03** · Skill **2026-10-27.s14**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
 
 s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
 
@@ -192,11 +194,13 @@ python -B "$skill/examples/offline_smoke.py" --output $out
 
 ### 版本记录
 
+s14补齐严格空FBI编辑器首项/第二项及两模式删空。独立副本已保存、重开、完整回读，恢复后编译0错误；删空保留旧引用时的编译错误另列，见[验收说明](references/validation.md)。
+
 s13将MIT许可证纳入完整包及校验清单，后台功能保持。
 
 s12增加已有结构成员改名与必要原生初始化键同步；正文引用由调用者处理。
 
-后台 **1.03** · Skill **2026-10-27.s13**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
+后台 **1.03** · Skill **2026-10-27.s14**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
 
 s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
 

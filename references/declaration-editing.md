@@ -1,6 +1,6 @@
 # 明确删除已有声明
 
-适用s8 / CLI 1.03。仅使用当前包的命令和本次读取的哈希，不向旧editor-variables或table-editor-edit清单塞入delete。
+适用s14 / CLI 1.03。仅使用当前包的命令和本次读取的哈希，不向旧editor-variables或table-editor-edit清单塞入delete。
 
 删除不检查引用、调用或类型使用者，不自动级联修改正文或其他定义；模型/用户安排引用处理，AutoShop编译检查语义。目标身份、格式边界、旧记录/文件哈希、外部修改、唯一备份及完整回读仍必须通过。编辑成功不等于编译通过。
 
@@ -12,9 +12,9 @@
 | 已识别ST FC变量 | offline系列；不接受source_file | editor-declarations-delete --kind fc | 支持 |
 | 结构成员 | offline系列 | editor-declarations-delete --kind stru | V4.11.0.5菜单禁用，至少留一项 |
 | GVT声明 | offline系列 | editor-declarations-delete --kind gvt | 已观察严格空表profile支持 |
-| FBI全局实例 | offline系列；只删除已有记录 | editor-declarations-delete --kind fbi | 未实现，至少留一项 |
+| FBI全局实例 | offline系列；只删除已有记录 | editor-declarations-delete --kind fbi | 完整已观察empty_table profile支持 |
 
-梯形图FB变量不是本入口的目标格式。其他文件为LD/FBI/SVT不会因引用覆盖不明而阻断已识别目标。FBI只移除计数及完整目标记录，幸存记录、地址及不透明前后容器原字节保持；不构造新实例、重分配地址或忽略未知布局。空FBI首次新增仍未实现。
+梯形图FB变量不是本入口的目标格式。其他文件为LD/FBI/SVT不会因引用覆盖不明而阻断已识别目标。FBI只移除计数及完整目标记录，幸存记录、地址及不透明前后容器原字节保持；不构造新实例、重分配地址或忽略未知布局。空FBI首项/第二项由instances-editor-add实现，见[实例操作](data-editing.md#全局fb实例)；不提供通用离线新增。
 
 ## 取得当前基线
 
@@ -72,4 +72,4 @@ file为准确登记相对路径。FB可显式另给source_file修正文，这不
 
 ## 验证边界
 
-后台已在Windows10 / AutoShop V4.11.0.5 / Python3.9.1独立副本验证：两模式明确删除、FB/FC/GVT删空、FBI非空删除及备份恢复；保留引用可导致预期编译错误，恢复后全部编译0错误。窗口GVT展开监视与声明缓存重叠的读取已修复并实测，不以磁盘值冒充窗口值。包本身的合成冒烟不是AutoShop验收，更不是设备运行验证；新机器/版本、空FBI及未知profile另验。
+后台已在Windows10 / AutoShop V4.11.0.5 / Python3.9.1独立副本验证：两模式明确删除、FB/FC/GVT/FBI严格profile删空及备份恢复；保留引用可导致预期编译错误，恢复后全部编译0错误。窗口GVT展开监视与声明缓存重叠的读取已修复并实测，不以磁盘值冒充窗口值。包本身的合成冒烟不是AutoShop验收，更不是设备运行验证；空FBI正式首项/第二项保存、重开和完整回读已验；删空保留调用时3错误，恢复71项后全部编译0错误。新机器/版本、新空白工程严格登记及未知profile另验。

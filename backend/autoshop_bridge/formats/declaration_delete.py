@@ -3,9 +3,9 @@
 Only complete records already decoded by the existing FB/FC/STRU/GVT/FBI readers
 are removed. References are not checked and no changes cascade. IDE acceptance,
 allocation, registration and recovery are outside this candidate builder.
-Empty results require an observed FB/FC/GVT layout. The observed IDE disables
-deletion of the last structure member. FBI candidates retain at least one
-instance and preserve both opaque surrounding containers byte for byte.
+Empty results require an observed FB/FC/GVT/FBI layout. The observed IDE disables
+deletion of the last structure member. FBI candidates preserve both opaque
+surrounding containers byte for byte, including the strict empty-table profile.
 """
 
 import struct
@@ -15,7 +15,7 @@ from autoshop_bridge.formats import empty_table, fb, fc, instances, tables
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.storage import sha256
 
-PROFILE = "declaration-delete-candidate-v3"
+PROFILE = "declaration-delete-candidate-v4"
 
 
 def _layout(raw, kind):
@@ -25,10 +25,9 @@ def _layout(raw, kind):
         raise BridgeError("Deletion supports only FB/FC/STRU/GVT/FBI candidates.")
     if kind == "fbi":
         document = instances.parse(raw)
-        if (document["profile"] != instances.PROFILE
-                or document["coverage"] != "instance_segment_only"
-                or document["instance_count"] < 1):
-            raise BridgeError("Deletion requires the observed nonempty FBI instance-record segment.")
+        if (document["profile"] not in (instances.PROFILE, instances.EMPTY_PROFILE)
+                or document["coverage"] != "instance_segment_only"):
+            raise BridgeError("Deletion requires an observed FBI instance-record segment.")
         count_offset = document["record_segment_offset"]
         count = struct.unpack_from("<I", raw, count_offset)[0]
         rows = tuple((v["name"], v["record_offset"], v["record_offset"] + v["record_bytes"])
@@ -77,7 +76,7 @@ def record_baselines(raw, kind):
 
 
 def rebuild(raw, kind, operations):
-    """Delete exact hash-matched records, allowing observed FB/FC/GVT empty layouts.
+    """Delete exact hash-matched records, allowing observed FB/FC/GVT/FBI empty layouts.
 
     All operations refer to this input's original records. Only the four-byte
     count and requested complete record spans may change. Prefix, surviving
@@ -111,13 +110,13 @@ def rebuild(raw, kind, operations):
     remaining = [(name, start, stop) for name, start, stop in rows if name not in deleted]
     if not remaining and kind == "stru":
         raise BridgeError("Deleting the last declaration in a structure is unsupported by the observed IDE; retain at least one member.")
-    if not remaining and kind == "fbi":
-        raise BridgeError("Deleting the last FBI instance requires separate IDE empty-table transition evidence.")
     records = [raw[start:stop] for _, start, stop in remaining]
     result = (raw[:count_offset] + struct.pack("<I", len(remaining))
               + b"".join(records) + raw[end:])
     if not remaining and kind == "gvt" and empty_table.count_offset(result) != count_offset:
         raise BridgeError("Deleting the last declaration requires the observed empty GVT profile.")
+    if not remaining and kind == "fbi" and empty_table.instance_segment(result) != (count_offset, count_offset + 4):
+        raise BridgeError("Deleting the last FBI instance requires the observed complete empty-table profile.")
     new_count, new_end, new_rows = _layout(result, kind)
     if (new_count != count_offset or result[:new_count] != raw[:count_offset]
             or result[new_end:] != raw[end:]

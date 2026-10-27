@@ -6,7 +6,7 @@ CLI 1.03补充：[关闭工程离线开发](offline-editing.md)处理已登记ST
 
 s8明确删除走[声明删除](declaration-editing.md)的declarations-read/editor-declarations-delete或offline入口；不向本页旧编辑接口的清单添加delete。两模式不检查引用、不级联，完整性检查保留。窗口GVT读取已覆盖已观察的声明缓存/展开监视重叠布局，仍以实际窗口完整回读为准。
 
-用户明确需要新建LiteST FB或结构时，可先检查`object-plan --help`和`object-create --help`，优先由软件正常界面创建，再走已登记对象编辑。计划要求完整工程/PID、名称、初始source-file或members-file、新output；只有显式save-project才保存工程登记。先inspect/plan再用计划调用create，检查created/saved/registration/readback各阶段，失败可能已创建部分对象，不重放。严格镜像资格不满足时停止，不能拿正文registration-receipt绕过创建或类型检查。空全局FB实例表首项仍待办，不按已有非空表新增方式强行初始化。
+用户明确需要新建LiteST FB或结构时，可先检查`object-plan --help`和`object-create --help`，优先由软件正常界面创建，再走已登记对象编辑。计划要求完整工程/PID、名称、初始source-file或members-file、新output；只有显式save-project才保存工程登记。先inspect/plan再用计划调用create，检查created/saved/registration/readback各阶段，失败可能已创建部分对象，不重放。严格镜像资格不满足时停止，不能拿正文registration-receipt绕过创建或类型检查。严格已识别空FBI首项/第二项可用下文instances-editor-add；新空白工程未知HCPP登记另待，不绕过资格检查。
 
 整理方式：AI 根据现有表与变量适配整理  
 当前状态：限定操作；不把读到类型等同能写该类型  
@@ -67,10 +67,11 @@ python -B $bridge table-editor-edit $tableWork --project $project --table $table
 
 ```powershell
 python -B $bridge instances-editor-read --project $project --table $instanceTable --open --output "$artifacts/instances-before.json"
+python -B $bridge instances-editor-add --project $project --table $instanceTable --changes "$artifacts/instances-changes.json" --expect-sha256 $fbiHash --dry-run
 python -B $bridge instances-editor-add --project $project --table $instanceTable --changes "$artifacts/instances-changes.json" --expect-sha256 $fbiHash --experimental --save
 ```
 
-FBI哈希取当次读取；清单schema=1/operations，每项例如`{"op":"add","name":"fbExampleTimer","data_type":"FB_Timer","initial_value":null,"comment":"Timer"}`，仅在该项目已登记且严格解析FB_Timer时有效。必须为已观察的非空11列表；类型依赖、跨GVT重名及全表保护保留。原实例定义保持，编译后地址可能变化，须重新读取。删除改走独立声明入口，已识别FBI原件可backup/restore；库实例、空FBI新增/删空及任意容器构造仍不支持。
+FBI哈希取当次读取；清单schema=1/operations，每项例如`{"op":"add","name":"fbExampleTimer","data_type":"FB_Timer","initial_value":null,"comment":"Timer"}`，仅在该项目已登记且严格解析FB_Timer时有效。支持已观察非空11列表或完整严格空FBI profile；类型依赖、跨GVT重名及全表保护保留。原实例定义保持，编译后地址可能变化，须重新读取。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile的FBI可两模式删空；库实例、通用离线新增及任意容器构造仍未实现。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份，创建并核对IDE默认首行，再检查真实类型选择器。失败可能留下已知未保存首行，先回读，不重放。新空白工程未知HCPP登记可能独立阻止入口，不拿正文凭据绕过。
 
 ## 系统定义及受限新建
 

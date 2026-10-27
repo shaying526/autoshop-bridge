@@ -35,9 +35,9 @@ INSTANCE_COLUMNS = dict(
     id="ID",
 )
 
-# The candidate first-row path below has synthetic coverage only. The user
-# deferred the fresh-project registration blocker; no public flag enables it.
-EMPTY_INSTANCE_ADDITIONS_VALIDATED = False
+# V4.11.0.5: empty table -> first/second project-FB instance saved and read back
+# in an independent copy. Registration/type/hash/backup checks remain mandatory.
+EMPTY_INSTANCE_ADDITIONS_VALIDATED = True
 
 
 def normalize(raw):
@@ -267,6 +267,7 @@ def add(
                 status="instances_ready",
                 operations=ops,
                 instance_count=len(before["rows"]),
+                selector_preflight="pending_first_default_row" if not before["rows"] else "not_performed",
             )
         backup = create_backup(t, raw, backup_root, "editor_instances")
         write_json_new(backup / "editor_before.json", before)
