@@ -24,7 +24,7 @@ def tree(root):
 
 def fixtures(project):
     sys.path.insert(0, str(SKILL / "backend"))
-    from autoshop_bridge.formats import st, tables
+    from autoshop_bridge.formats import st, tables, empty_table
     string = tables.string
     project.mkdir(parents=True)
 
@@ -60,8 +60,11 @@ def fixtures(project):
         + struct.pack("<II", 257, 0x2100000 + index * 16) + string("Synthetic instance")
         + b"\xff\xfe\xff\0" + struct.pack("<II", 0, 0) + string("Logic") + b"\xff" * 8
         for index, name in enumerate(("firstInstance", "secondInstance")))
-    (project / "Instances.fbi").write_bytes(b"AutoShop-synthetic" + struct.pack("<I", 2)
-        + instance_records + b"AutoShop-synthetic-opaque-suffix")
+    header = b"AutoShop-synthetic"
+    empty = header + empty_table.DECLARATION_TAIL + header + empty_table.IMPLICIT_TAIL
+    offset, end = empty_table.instance_segment(empty)
+    (project / "Instances.fbi").write_bytes(empty[:offset] + struct.pack("<I", 2)
+        + instance_records + empty[end:])
     names = ("Logic.FB", "TimerBlock.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
              "Calc.FC", "EmptyCalc.FC", "Instances.fbi")
     xml = "<project>" + "".join('<file id="{}"><Caption>{}</Caption><FileName>{}</FileName></file>'.format(
@@ -113,10 +116,12 @@ def run(output):
                 skill = SKILL if label == "A" else relocated
                 project, work = output / location, output / ("work-" + label)
                 fixtures(project)
-                from autoshop_bridge.formats import fb, fc, st, tables
+                from autoshop_bridge.formats import fb, fc, st, tables, instances
                 baseline = tree(project)
                 old_fc = fc.parse((project / "Calc.FC").read_bytes())
                 old_global = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
+                original_fbi = (project / "Instances.fbi").read_bytes()
+                old_instances = instances.parse(original_fbi)
                 old_row = old_global.rows[0]
                 source = output / ("source-" + label + ".st")
                 source.write_bytes(b"// synthetic added line\n// synthetic second line\n")
@@ -136,6 +141,9 @@ def run(output):
                     dict(file="EmptyCalc.FC", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, category=category, initial_value=None, comment="Synthetic FC")
                         for name, dtype, category in (("enabled", "BOOL", "VAR"), ("inputValue", "INT", "IN"))]),
+                    dict(file="Instances.fbi", variable_operations=[dict(op="add", name=name,
+                        data_type="TimerBlock", initial_value=None, comment="Synthetic global FB")
+                        for name in ("globalTimerA", "globalTimerB")]),
                     dict(file="Globals.gvt", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, comment="Synthetic global", initial_value=None)
                         for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))])])), encoding="utf-8")
@@ -170,7 +178,17 @@ def run(output):
                 assert full_fc.raw[full_fc.inner_offset - 4:] == old_fc.raw[old_fc.inner_offset - 4:]
                 for old, new in zip(old_fc.variables, full_fc.variables):
                     assert old_fc.raw[old.offset:old.end] == full_fc.raw[new.offset:new.end]
-                for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC"}:
+                new_fbi = (project / "Instances.fbi").read_bytes()
+                new_instances = instances.parse(new_fbi)
+                assert new_instances["instance_count"] == 4
+                for old, new in zip(old_instances["instances"], new_instances["instances"]):
+                    a, b = old["record_offset"], new["record_offset"]
+                    assert original_fbi[a:a+old["record_bytes"]] == new_fbi[b:b+new["record_bytes"]]
+                for row in new_instances["instances"][2:]:
+                    assert row["data_type"] == "TimerBlock" and row["initial_value_raw"] == ""
+                    assert row["uninterpreted_metadata"]["flags_raw"] == 0
+                    assert row["uninterpreted_metadata"]["address_raw"] == 0xffffffff
+                for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC", "Instances.fbi"}:
                     assert digest(project / name) == baseline[name], name
                 # Exercise the new declaration API through the exported CLI,
                 # then restore the entire deletion stage before the outer restore.
@@ -216,7 +234,7 @@ def run(output):
                     "--expect-receipt-sha256", digest(receipt), "--backup-root", output / ("restore-" + label), "--experimental")
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
-                    fb_seven_variables=True, fb_internal_project_instances=True,
+                    fb_seven_variables=True, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
                     gvt_unallocated_structures=True, source_lines_added=True,
                     fc_nonempty_and_empty_additions=True,
                     declaration_delete_five_kinds=True, stale_delete_replay_refused=True,

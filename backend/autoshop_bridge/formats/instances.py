@@ -1,7 +1,8 @@
 """Read-only, uniquely bounded instance-record segment in observed FBI files.
 
-The surrounding CArchive containers are opaque. No serializer, writable fields,
-or full-container validation is provided by this module.
+The surrounding CArchive containers are opaque. This reader does not authorize
+writes. The separate offline_instances appender qualifies the observed paired
+table layout without constructing archives or allocating addresses.
 """
 
 import struct
@@ -27,7 +28,7 @@ def _document(raw, start, end, rows, profile=PROFILE):
         opaque_suffix_sha256=sha256(raw[end:]), limitations=[
             "Only the uniquely bounded instance-record segment is parsed.",
             "Surrounding archive metadata and nested initializer syntax remain opaque.",
-            "No native instance-table serializer, registration or allocation is implemented.",
+            "This read-only snapshot does not authorize native writes, registration or allocation.",
         ],
     )
 

@@ -1,5 +1,7 @@
 # 变量、结构、全局表与实例
 
+s18全局FBI项目FB实例文件新增走[offline系列](offline-editing.md#全局fbi项目fb实例s18)：准确FBI目标、add/name/data_type/initial_value:null/comment，无category，空表首项/第二项及批量同格式；正文由调用者另作目标组织。新记录不复制地址，未知双表布局明确拒绝，旧实例及两侧容器保持。
+
 s17补齐内部VAR项目FB实例的文件新增：用[offline系列](offline-editing.md#fb内部项目fb实例s17)，现有variable_operations/add，category:VAR、initial_value:null、准确登记类型名；空表及批量同格式。IDE将FB类型文本大写，工具不构造传递初始化或地址，不同步业务正文。方法二已兼容这项实际显示规则，原记录及其他字段严格保护。
 
 s16支持严格空GVT首项/第二项：标量使用下文普通add清单，结构initial_value:null，编辑器走table-editor-edit，文件模式走offline系列。空结构dry-run不创建行或备份，selector_preflight=pending_first_default_row；实际执行先核对IDE默认BOOL行并预检真实选择器。失败可能留已知未保存行，先完整回读，不重放。仅结构表也可继续追加；不改地址/前缀，不放宽未知空布局或登记资格。

@@ -311,6 +311,9 @@ def default_candidate_builder(entry, raw, source, definitions):
     if suffix == ".gvt" and source is None and "variable_operations" in entry:
         from autoshop_bridge.formats.offline_globals import rebuild
         return rebuild(raw, entry["variable_operations"], structure_definitions=definitions)
+    if suffix == ".fbi" and source is None and "variable_operations" in entry:
+        from autoshop_bridge.formats.offline_instances import rebuild
+        return rebuild(raw, entry["variable_operations"], definitions)
     if suffix == ".stru" and source is None and "variable_operations" in entry:
         try:
             return tables.parse(raw, "stru").rebuild(entry["variable_operations"])
@@ -341,8 +344,8 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
     else:
         for entry, source in entries:
             suffix = Path(entry["file"]).suffix.lower()
-            if suffix == ".fbi":
-                raise BridgeError("Offline FBI supports declaration deletion only, without source_file.")
+            if suffix == ".fbi" and (source is not None or not entry.get("variable_operations")):
+                raise BridgeError("Offline FBI additions require variable_operations without source_file.")
             if suffix == ".fc" and (source is not None or not entry.get("variable_operations")):
                 raise BridgeError("Offline FC additions require variable_operations without source_file.")
     definitions = {}
@@ -362,10 +365,11 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
     # requested project FB definitions; unrelated LD/unknown bodies stay opaque
     # protected bytes. Syntax, calls and recursive type use belong to compilation.
     requested_fbs = {op["data_type"] for entry, _ in entries
-                     if Path(entry["file"]).suffix.lower() == ".fb"
+                     if Path(entry["file"]).suffix.lower() in (".fb", ".fbi")
                      for op in entry.get("variable_operations", [])
                      if isinstance(op, dict) and op.get("op") == "add"
-                     and isinstance(op.get("data_type"), str)}
+                     and isinstance(op.get("data_type"), str)
+                     and op["data_type"] not in fb.BUILTIN_TYPES.values()}
     for dtype in sorted(requested_fbs):
         matches = [(name, row) for name, row in manifest["registered"].items()
                    if row["state"] == "present" and Path(name).suffix.lower() == ".fb"
@@ -394,14 +398,24 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
     project_names = {row["name"] for row in manifest["registered"].values() if row.get("name")}
     project_names.update(row["name"] for row in manifest["excluded_nonfile_registration"] if row.get("name"))
     project_names.update(Path(name).stem for name in manifest["registered"])
-    globals_needed = any(Path(entry["file"]).suffix.lower() == ".gvt" and any(isinstance(op, dict) and op.get("op") == "add" for op in entry.get("variable_operations", [])) for entry, _ in entries)
+    global_additions = {Path(entry["file"]).suffix.lower() for entry, _ in entries
+                        if Path(entry["file"]).suffix.lower() in (".gvt", ".fbi")
+                        and any(isinstance(op, dict) and op.get("op") == "add"
+                                for op in entry.get("variable_operations", []))}
     global_names = set()
-    if globals_needed:
+    if global_additions:
         for name, raw in blobs.items():
-            if Path(name).suffix.lower() == ".gvt":
-                global_names.update(row.name for row in tables.parse(raw, "gvt").rows)
-            elif Path(name).suffix.lower() == ".fbi":
-                global_names.update(row["name"] for row in instances.parse(raw)["instances"])
+            try:
+                if Path(name).suffix.lower() == ".gvt":
+                    global_names.update(row.name for row in tables.parse(raw, "gvt").rows)
+                elif Path(name).suffix.lower() == ".fbi":
+                    global_names.update(row["name"] for row in instances.parse(raw)["instances"])
+            except BridgeError:
+                if ".gvt" in global_additions:
+                    raise  # Preserve the existing GVT workflow's qualification.
+                # New FBI append only: check names available from known tables;
+                # unknown siblings stay hash-protected, with semantics left to
+                # compilation. The target still requires its exact layout below.
     for entry, _ in entries:
         operations = entry.get("variable_operations", [])
         precheck_addition_names(dict(operations=operations))
@@ -415,9 +429,9 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
             if op.get("op") == "add":
                 if str(op.get("data_type", "")).casefold() in changed_structures:
                     raise BridgeError("Editing a structure and adding a reference to it in one batch is unsupported.")
-                require_new_identifier(op.get("name"), existing_names=global_names if suffix == ".gvt" else local_names,
-                                       project_names=project_names if suffix == ".gvt" else ())
-                (global_names if suffix == ".gvt" else local_names).add(op["name"])
+                require_new_identifier(op.get("name"), existing_names=global_names if suffix in (".gvt", ".fbi") else local_names,
+                                       project_names=project_names if suffix in (".gvt", ".fbi") else ())
+                (global_names if suffix in (".gvt", ".fbi") else local_names).add(op["name"])
     builder = candidate_builder or default_candidate_builder
     candidates = []
     for entry, source in entries:

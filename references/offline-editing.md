@@ -8,7 +8,7 @@ s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本�
 当前状态：CLI 1.03实验扩展；独立副本加载、正文/表回读和编译通过，发布包另做完整性验证  
 最后更新：2026-10-26
 
-处理已创建并登记的ST、LiteST FB、结构和全局变量表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
+处理已创建并登记的ST、LiteST FB、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
 
 ## 命令与路径
 
@@ -29,6 +29,23 @@ python -B $bridge offline-restore --receipt-file $receipt --expect-receipt-sha25
 exported冻结直接HCP、所有现存登记文件和额外原生文件。没有独立文件的登记列入excluded_nonfile_registration；原本缺失的非原生配置列入declared_missing，必须保持不存在。两者不成为可写目标；缺失原生依赖拒绝。HCPP不签发离线写资格。export/check/build只读，不证明工程已关闭；apply/restore全程保持Windows独占只读HCP句柄。用户仍须关闭工程，独占句柄不能证明其他软件没有旧内存内容。
 
 checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
+
+## 全局FBI项目FB实例（s18）
+
+目标为准确登记的FBI文件，命令沿用上文offline-export/check/build/apply/restore，工程须关闭。add没有category，不把全局实例当普通GVT或FB内部VAR记录。示例中的文件及类型名须换成当次登记对象：
+
+```json
+{"schema":1,"targets":[{"file":"Instances.fbi","variable_operations":[
+  {"op":"add","name":"timerA","data_type":"TimerBlock","initial_value":null,"comment":"First global timer"},
+  {"op":"add","name":"timerB","data_type":"TimerBlock","initial_value":null,"comment":"Second global timer"}
+]}]}
+```
+
+空表首项、第二项及非空批量同格式，每目标1–32项，最多4096声明。引用类型须是精确登记并可解析的LiteST项目FB；FBI原生类型文本保留准确名称大小写，不套用内部VAR的大写规则。新记录为空初始化、flags0和FFFFFFFF未分配地址，AutoShop加载/编译负责布局和分配，不生成传递初始化，不改类型定义或旧实例。V4.11.0.5正常加载可把新记录flags从0改为256，编译再分配地址；完整语义未解码，工具不预写256绕过。加载/编译后需重新获取基线，不重放旧plan。库名、LD FB、显式复杂初值及其他字段尚未实现。
+
+新增只接受已观察双表容器：移除声明后须严格匹配完整已验空表与共享CArchive状态。唯一记录段能读、能删除，不表示任意容器可新增。未知布局返回offline_unsupported_fbi_layout，context包含profile、field，能定位记录段时提供record_segment_offset和record_segment_bytes，否则给出original_error；显式初值返回offline_unsupported_fbi_initializer，未知类型返回offline_unsupported_fb_instance。目标格式拒绝补target及相关操作/变量/类型，不要求调用者修改未知字节或清零绕过。
+
+工具检查已解析GVT/FBI、工程对象及同批新增名称；仅新增FBI时，无法解析的同级对象仍全部冻结/备份，不作为目标新增的语义门槛；混合GVT请求沿用既有GVT资格，不宣称已证明所有业务引用/类型使用正确。正文由调用AI另作source_file目标组织，不向FBI添加source_file，也不自动绑定调用。重开工程后用instances-editor-read完整核对，再另行编译；applied只证明磁盘写入与回读。身份、未保存状态、全部基线/唯一备份、候选重建及非目标保护保持。
 
 ## FB内部项目FB实例（s17）
 
@@ -83,7 +100,7 @@ file为登记中准确的相对路径。source_file相对changes.json目录解�
 
 FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；成员注释目前仅全空或全部非空可用。V4.11.0.5 实际INOUT保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续拒绝。混合注释、嵌套、数组、STRING拒绝。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。结构VAR新增编码与真实IDE已保存记录逐字节匹配，文件模式覆盖/重开尚未单独验收。
 
-开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；通用离线新增仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
+开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；限定FBI离线新增见s18段落，任意容器构造仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
 
 GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。s16严格已识别空GVT也支持BOOL/INT/DINT和上述结构首项/后续追加，完整空容器前缀保持，未分配地址不复制。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
 
@@ -93,7 +110,7 @@ s15实际37→28行的MAIN候选已在独立副本check/build/apply、恢复全1
 
 ## HCP占用时的目标正文凭据
 
-FBI删除扩展：已登记FBI目标仅允许明确delete；零结果须完整匹配已观察empty_table profile，沿用全部基线/备份/摘要及候选重建检查；唯一实例记录段外opaque字节严格保持，不新增或重建未知容器。当前真实CLI编辑器删除保存已验证，文件方法重开70项及恢复71项回读已验证，00:40:05恢复编译0错误。[删除专页](declaration-editing.md)记录证据。通用backup/restore只扩展为严格可解析、profile与扩展匹配的FBI原件恢复，恢复前另做备份，不代表任意FBI生成能力。
+FBI删除沿用原入口，新增按s18全局FBI段落执行；明确delete的零结果须完整匹配已观察empty_table profile，沿用全部基线/备份/摘要及候选重建检查；唯一实例记录段外opaque字节严格保持，不新增或重建未知容器。当前真实CLI编辑器删除保存已验证，文件方法重开70项及恢复71项回读已验证，00:40:05恢复编译0错误。[删除专页](declaration-editing.md)记录证据。通用backup/restore只扩展为严格可解析、profile与扩展匹配的FBI原件恢复，恢复前另做备份，不代表任意FBI生成能力。
 
 HCP的共享限制仍存在。该路径先在工程关闭时取得直接HCP和依赖快照，再在同一AutoShop进程重开后，用实际工程树、原生哈希及当前正文/整表验证目标；HCPP仅提供有界登记提示，不被默认当作最新工程。适用于已登记ST/LiteST FB正文，不授权变量新增、类型目录、对象创建或整个工程配置修改。
 

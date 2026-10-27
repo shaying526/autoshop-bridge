@@ -1,5 +1,7 @@
 # 能力和证据边界
 
+s18补齐全局FBI的文件模式项目FB实例追加：严格已识别双表容器、已有LiteST项目类型、null默认值、非空批量和空表首二项；完整基线/唯一备份/回读保持，正文引用由AI组织，不构造未知容器或内存地址。命令及边界见[离线编辑](offline-editing.md#全局fbi项目fb实例s18)，实际证据见[验收](validation.md)。
+
 s17支持已登记LiteST FB内部VAR项目FB实例的文件新增，含空表首项与批量追加：initial_value:null，正常IDE已观察的大写类型文本/空默认记录，不复制初始化或地址。带结构接口、内部项目FB、已有库成员的引用定义已在独立副本加载/回读及组合编译0错误；调用正文由AI显式修改。方法二兼容实际大写显示，详见[离线用法](offline-editing.md)、[验收](validation.md)。
 
 s16补齐严格空GVT：BOOL/INT/DINT首项及追加两模式可用；已有扁平结构首项/第二项文件模式用offline，编辑器用table-editor-edit。空表结构dry-run报告延后选择器预检且不创建行，真实执行先备份和默认行核对；仅结构表后续追加不再强制已有标量。未知空布局及新空白工程HCPP资格另待，见[变量与表](data-editing.md)、[验收](validation.md)。
@@ -37,7 +39,7 @@ s6另有[梯形图独立只读脚本](ladder-reading.md)，不属于上述公共
 | 正文编辑器：editor-open/read/sync/save/close | 工程、准确程序名、可选PID、工作目录/快照；缓冲/保存/回读状态 | Windows/已打开工程；可自动打开标签，sync默认不保存 | 已实现；ST/FB/FC正文限定场景保存及人工编译已验，其他版本/桌面未验 |
 | FB/FC变量：editor-variables | schema=1操作清单、原生哈希；整表和保存结果 | 改缓冲，显式保存；复杂类型/依赖和整表保护 | 已实现限定范围，见[变量操作](data-editing.md)；并非所有组合现场验收 |
 | 结构/GVT：table-export/check/build/apply、table-editor-read/edit/close | 独立table工作目录/changes.json；成员/声明、候选、备份、保存结果 | 文件及编辑器两模式；GVT新增核对全部同目录GVT | 限定字段及BOOL/INT/DINT普通新增两模式历史编译通过；DINT既有初值修改/极值只有自动测试 |
-| 全局FB实例：instances-editor-read/add | 准确表名、清单、FBI哈希；整表、备份和软件分配地址 | 新增支持非空或严格空实例表中的已解析项目FB；保存不等于编译分配完成 | 首项/第二项正式保存、重开完整回读已验；明确删除另走下行，已识别FBI原件可backup/restore；库实例、通用离线新增及任意容器构造未实现 |
+| 全局FB实例：instances-editor-read/add、offline系列 | 准确表名、清单、FBI哈希；整表、备份和软件分配地址 | 新增支持非空或严格空实例表中的已解析项目FB；保存不等于编译分配完成 | 首项/第二项正式保存、重开完整回读已验；明确删除另走下行，已识别FBI原件可backup/restore；库实例及任意容器构造未实现；s18限定文件新增走offline |
 | 明确删除：declarations-read、editor-declarations-delete、offline系列 | 准确对象/模式、文件及记录哈希、delete清单；候选/缓冲/保存/回读分阶段状态 | 不检查引用、不级联；完整身份/备份/基线/非目标保护，未知布局拒绝 | 两模式、FB/FC/GVT/FBI严格profile删空已在V4.11.0.5独立副本验证；STRU末项菜单禁用 |
 | 系统定义：system-variables-read | 工程+用户本机安装definitions-dir；表/类型/search有界结果及来源哈希 | 只读厂商XML，随包不带XML，不是PLC实时值 | 已实现；单型号、部分表与窗口核对，其余型号/地址单位未验；SVT不是空GVT |
 | 编译反馈：build-baseline/report | 本轮基线与用户取得的真实日志；reported_pass/fail/未解析诊断 | 仅写报告；compile_freshness=unverified | 已实现文本解析，真实故意错误/修复有历史人工反馈；自动编译、面板读取未实现 |
