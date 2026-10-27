@@ -2,8 +2,9 @@
   "schema": 1,
   "name": "autoshop-bridge",
   "mode": "portable-bundled-runtime",
-  "skill_revision": "2026-10-27.s12",
+  "skill_revision": "2026-10-27.s13",
   "backend_version": "1.03",
+  "license": "MIT",
   "generated_references": {
     "references/offline-editing.md": {
       "source": "docs/OFFLINE_DEVELOPMENT.md",
@@ -91,12 +92,16 @@
     "tools/diagnostics/inspect_autoshop_compile.py": "888d6baa8763327c6bc6555d7ee750aa1db9092f853c0becc3f68d6a31013761"
   },
   "files": {
+    "LICENSE": {
+      "sha256": "8207194d0a64b36a8940ce8369b1ea688bd0adccca21f664229e71952f4a8777",
+      "bytes": 1067
+    },
     "README.md": {
-      "sha256": "3bf09dceefaea942533480e8c93d6c5f390499513989f733f5114bce06e50eba",
-      "bytes": 16979
+      "sha256": "cd71baced960556cf4294bd5932daa1706c3794cbcaa863c81302f5b80cad53f",
+      "bytes": 17452
     },
     "SKILL.md": {
-      "sha256": "d37d2cc7166ce21016ba2c0309f37a063e05f40c4cbbba9db29c9b467f2c9d2b",
+      "sha256": "eebc4ad6d6704fb012182b770f1c08e51237346b299768743b4e8cafba505cb6",
       "bytes": 8218
     },
     "backend/autoshop_bridge/__init__.py": {

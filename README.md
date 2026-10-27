@@ -83,13 +83,19 @@ See [two-project acceptance steps](references/validation.md). The smoke test cre
 
 For failure, retain the JSON error, completed stage and backup path; inspect current state before retrying. Do not save stale windows or assume rollback. See [environment and recovery](references/environment.md). This package includes no precompiled development cache: grid access uses the supported PowerShell/fixed-C# fallback. It needs no always-on service or MCP, and exposes no unified progress/cancellation API.
 
-Distribution model **B: portable bundled runtime**. Backend code is generated from one maintained source, not a separately evolved implementation. Customer projects, screenshots, vendor XML, private paths and development history are excluded by the export list and known-pattern checks; these checks do not guarantee semantic anonymization. Final publication review, license selection and GitHub upload remain pending. AutoShop itself and vendor materials are not included.
+Distribution model **B: portable bundled runtime**. Backend code is generated from one maintained source, not a separately evolved implementation. Customer projects, screenshots, vendor XML, private paths and development history are excluded by the export list and known-pattern checks; these checks do not guarantee semantic anonymization. The repository is public and the complete package is released under the [MIT License](LICENSE). AutoShop itself and vendor materials are not included.
+
+### License
+
+[MIT](LICENSE), copyright 2026 shaying526. The license covers this project; AutoShop and vendor materials retain their own terms.
 
 ### Version notes
 
+s13 includes the MIT license in the complete package and integrity manifest; backend behavior is unchanged.
+
 s12 adds existing structure member renames with associated native initializer-key updates. Source references remain under the caller’s control.
 
-Backend **1.03** · Skill **2026-10-27.s12**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
+Backend **1.03** · Skill **2026-10-27.s13**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
 
 s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
 
@@ -178,13 +184,19 @@ python -B "$skill/examples/offline_smoke.py" --output $out
 
 失败时保留错误JSON、阶段和备份位置，先检查现状，再决定重试；不要保存旧窗口或假定自动回滚，详见[环境与恢复](references/environment.md)。本包不带开发机预编译缓存，grid使用既有PowerShell固定C#兼容入口；无常驻服务/MCP或统一进度、取消接口。
 
-采用**B：可移植分发**，不依赖开发机绝对路径、客户工程或在线服务。允许清单和已知模式筛查排除真实工程、截图、厂商XML、个人路径及开发历史，但不保证发现所有语义敏感信息。最终人工发布审查、许可证选择及GitHub上传仍待办；本包不包含AutoShop本体或厂商资料。
+采用**B：可移植分发**，不依赖开发机绝对路径、客户工程或在线服务。允许清单和已知模式筛查排除真实工程、截图、厂商XML、个人路径及开发历史，但不保证发现所有语义敏感信息。GitHub仓库已公开，完整包随附[MIT许可证](LICENSE)；本包不包含AutoShop本体或厂商资料。
+
+### 许可证
+
+采用[MIT许可证](LICENSE)，版权署名2026 shaying526；AutoShop本体及厂商资料仍适用各自条款。
 
 ### 版本记录
 
+s13将MIT许可证纳入完整包及校验清单，后台功能保持。
+
 s12增加已有结构成员改名与必要原生初始化键同步；正文引用由调用者处理。
 
-后台 **1.03** · Skill **2026-10-27.s12**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
+后台 **1.03** · Skill **2026-10-27.s13**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
 
 s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
 
