@@ -41,7 +41,7 @@ s8明确删除走[声明删除](declaration-editing.md)的declarations-read/edit
 
 整理方式：AI 根据现有表与变量适配整理  
 当前状态：限定操作；不把读到类型等同能写该类型  
-最后更新：2026-10-26
+最后更新：2026-10-28
 
 所有示例沿用SKILL.md已设置的绝对路径和用户准确对象名。执行前读取当前表/正文/原生基线；从结果选取实际行，不把示例名称当目标。默认不保存，`--save`才保存，`--close`需配保存；dry-run不能自动打开标签。真实写入需已有用户授权且`--experimental`，每步检查结果。
 
@@ -61,9 +61,23 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ]}
 ```
 
-- FB：已有注释/BOOL/INT/DINT标量初值限定set；VAR/IN/OUT新增BOOL/INT/DINT，初值字符串。INOUT可新增这些标量；IN/OUT/INOUT可新增已解析项目结构，内部VAR可新增已解析项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。本轮结构已验范围为扁平BOOL/INT/DINT。已有标量行用于真实选择器预检，未知/库/数组/循环依赖拒绝。
+- FB：已有注释/BOOL/INT/DINT标量初值限定set；VAR/IN/OUT新增BOOL/INT/DINT，初值字符串。INOUT可新增这些标量；IN/OUT/INOUT可新增项目结构，内部VAR可新增项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。平面BOOL/INT/DINT结构支持全空、全非空及混合成员注释，详见下节。宿主须为已支持LiteST FB，不能用此入口直接修改LD宿主。
+- s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；未登记单段库名、方法一库/LD实例构造和未知原生布局尚未实现。
+- 内部VAR选择器未读取类型分类，未登记点限定名称先标`ide_resolved`，不预断为FB。保存后只接受原生64（结构）或256（FB），核对实际名称/类型文本、VAR类别和已知默认字段；结果`named_type_resolution`与备份`native_added_variables.json`记录实际类型及初值。未保存状态仍待原生回读，不能据此报告已确认FB类型。
+- 空表或仅有复杂声明的非空表，可在备份后创建并核对准确默认行，再延后类型选择器预检；有可用标量行时先预检。dry-run不创建行。失败可能留下已知未保存行，先回读现场，不盲目重放。
 - FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT的BOOL/INT/DINT新增initial_value必须null。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。复杂类型、返回类型、FCI和新建FC不开放。不要把FB示例字符串初值套给FC。
 - 文件export的variables.json只读；FB/FC离线编辑改走offline系列及其variable_operations，FC支持标量add或独立明确delete，新增不接受source_file，不混用add/delete，不重建正文行表。不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保持，保存前备份，保存后原生/窗口核对。新增INOUT后必须按真实需求修改所有调用实参，工具不会自动绑定。
+
+库/LD引用沿用上面的editor-variables命令及同一JSON格式。以下`ExampleLadderFB`为合成占位，必须替换为本次工程已登记LD功能块的准确名称；`TRIG.R_TRIG`也须在本机真实选择器中存在，不硬编码软件库清单。
+
+```json
+{"schema":1,"operations":[
+  {"op":"add","name":"fbRise","category":"VAR","data_type":"TRIG.R_TRIG","initial_value":null,"comment":"Rising edge"},
+  {"op":"add","name":"fbLadder","category":"VAR","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD type"}
+]}
+```
+
+上述新增不自动更新正文或绑定参数，调用AI显式组织正文，再交编译。s20已完成限定组合重开、完整回读及组合/恢复0错误编译，保存状态与编译结果仍分别报告。
 
 ## 结构/GVT双模式
 
@@ -81,6 +95,8 @@ python -B $bridge table-check $tableWork
 ```
 
 结构成员add只有op/name/data_type/comment；GVT新增标量还需initial_value字符串。普通BOOL/INT/DINT可新增，BOOL用ON/OFF，INT/DINT用规范十进制；结构定义没有初值/保持/地址。方法二的空/非空GVT还支持已登记非空扁平结构，initial_value必须null；方法一结构新增走offline系列，旧table-check/build/apply仍不接受结构新增。已有初值set只限支持的标量，旧接口不能改已有名称/类型/保持/地址或删除。
+
+s20平面BOOL/INT/DINT结构可混合空/非空成员注释，两模式及[正规改名](structure-renaming.md)使用同一已观察默认模板。FB仅输出有注释成员的`name:=\x07comment`，是否追加`, `依据该成员在原定义中是否末项；末项无注释时可能保留尾随`, `，不能过滤后join、trim或删注释。全空注释仍为空初始化串；GVT使用其独立空串布局，不套FB语法。初值仍显式null；`=`/`#`原样保留，`(),:`等未观察注释语法、嵌套/数组及值初始化构造仍待。混合注释已完成正常保存、方法一完整候选对照、重开完整回读及组合/恢复0错误编译。
 
 文件路径：`table-build WORK --output NEW_CANDIDATE --experimental`生成独立候选；`table-apply WORK --experimental`备份后覆盖。用户需安排重开工程加载，再编译。
 
@@ -102,7 +118,24 @@ python -B $bridge instances-editor-add --project $project --table $instanceTable
 python -B $bridge instances-editor-add --project $project --table $instanceTable --changes "$artifacts/instances-changes.json" --expect-sha256 $fbiHash --experimental --save
 ```
 
-FBI哈希取当次读取；清单schema=1/operations，每项例如`{"op":"add","name":"fbExampleTimer","data_type":"FB_Timer","initial_value":null,"comment":"Timer"}`，仅在该项目已登记且严格解析FB_Timer时有效。支持已观察非空11列表或完整严格空FBI profile；类型依赖、跨GVT重名及全表保护保留。原实例定义保持，编译后地址可能变化，须重新读取。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile的FBI可两模式删空；库实例、通用离线新增及任意容器构造仍未实现。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份，创建并核对IDE默认首行，再检查真实类型选择器。失败可能留下已知未保存首行，先回读，不重放。新空白工程未知HCPP登记可能独立阻止入口，不拿正文凭据绕过。
+FBI哈希取当次读取；清单schema=1/operations，initial_value必须null，不带category。支持已观察非空11列表或严格空FBI profile。s20方法二支持准确登记的LiteST/已识别LD项目FB和点限定库FB；FBI使用自身FB专用选择器，须准确唯一命中。根定义身份、可读文件哈希、跨GVT名称及完整表保护保留，不要求递归证明业务布局。无关GVT未解析时保护其可读文件哈希，不阻断已支持FBI目标。
+
+```json
+{"schema":1,"operations":[
+  {"op":"add","name":"fbRiseGlobal","data_type":"TRIG.R_TRIG","initial_value":null,"comment":"Rising edge"},
+  {"op":"add","name":"fbLadderGlobal","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD type"}
+]}
+```
+
+`ExampleLadderFB`须替换为本次已登记LD类型；库名也取真实选择器。文件模式仅已交付的项目LiteST FB新增，见[offline系列](offline-editing.md#全局fbi项目fb实例s18)；方法一库/LD、未登记单段库名和任意容器构造仍待。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile可两模式删空。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份、核对IDE默认首行，再预检选择器。失败可能留已知未保存行，先回读，不重放。新空白工程未知HCPP登记另待，不拿正文凭据绕过。
+
+FBI新增逐格操作读取新行完整11列，并核对全部声明名称、计数及唯一ID；保存前和保存后仍完整读取整表，不以局部页冒充完整回读。新增入口允许区分界面分配预览与原生地址，结果分开报告：
+
+- `allocation_preview.before/after_save`列出对应时点UI与原生地址差异；`scope=not_saved_native_allocation`表示尚无获准的旧原生地址写入差量，不代表预览已写入文件。
+- 若IDE保存时实际更新旧地址，只有已知地址字段的4字节精确等于写前冻结完整UI地址、且该记录其余字节全部保持，才接受。更新逐项列在`native_allocation_updates`，scope变为`editor_preview_with_native_updates`；这与仍存在的显示预览差异分开处理。
+- flags、类型、初值、注释、记录长度或其他旧记录字节变化仍停止；没有上述显式冻结预览的其他入口保持严格原记录检查。不透明容器差量另报，不生成或改写未知字节。
+
+库/LD正常保存、重开完整回读及组合/恢复0错误编译已限定验收；1623项回归通过（1项主机权限跳过）。以后加载/编译改变原生文件须重新读取、导出及获取哈希，不沿用旧工作目录。
 
 ## 系统定义及受限新建
 

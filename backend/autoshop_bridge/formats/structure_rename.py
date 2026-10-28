@@ -5,6 +5,7 @@ reference is changed. A declaration rename is not a business-reference check.
 """
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import fb, tables
+from autoshop_bridge.formats.structure import comment_initializer
 
 
 def structure(raw, renames):
@@ -47,12 +48,11 @@ def initializer(value, definition, mapping):
     # Match the complete concrete template, including every original comment.
     # Delimiters inside comments are not parsed, escaped, removed or rewritten.
     # Unknown value-bearing/nested initializers need their own format evidence.
-    if not definition.rows or any(not row.comment for row in definition.rows):
-        raise BridgeError("Nonempty structure initializer does not match the observed complete member-comment profile.")
-    expected = "(" + ", ".join(r.name + ":=\x07" + r.comment for r in definition.rows) + ")"
+    expected = comment_initializer((r.name, r.comment) for r in definition.rows)
     if value != expected:
         raise BridgeError("Associated structure initializer differs from its exact definition; no unknown metadata was changed.")
-    return "(" + ", ".join(mapping.get(r.name, r.name) + ":=\x07" + r.comment for r in definition.rows) + ")"
+    return comment_initializer((mapping.get(r.name, r.name), r.comment)
+                               for r in definition.rows)
 
 
 def fb_initializers(raw, definitions):

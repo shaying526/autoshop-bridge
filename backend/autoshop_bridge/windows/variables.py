@@ -126,12 +126,12 @@ def validate_changes(document, rows, types=None):
             )
             if (
                 code is None
-                or (code == 256 and op["category"] != "VAR")
+                or (code in (256, "ide_resolved") and op["category"] != "VAR")
             ):
                 raise BridgeError(
                     "Only scalar/structure variables and ordinary VAR FB instances are enabled."
                 )
-            default = op["category"] == "INOUT" or code in (64, 256)
+            default = op["category"] == "INOUT" or code in (64, 256, "ide_resolved")
             if default and op["initial_value"] is not None:
                 raise BridgeError(
                     "INOUT/complex additions require initial_value=null (IDE defaults)."
@@ -197,6 +197,11 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
         code = type_context.SCALARS.get(
             op["data_type"], types.get(op["data_type"], {}).get("code")
         )
+        if code == "ide_resolved":
+            if var.type_code not in (64, 256):
+                raise BridgeError("Saved IDE named type has an unsupported native descriptor: "
+                                  + str(var.type_code))
+            code = var.type_code
         initial = op["initial_value"]
         complex_default = initial is None and code in (64, 256)
         if initial is None and not complex_default:
@@ -284,7 +289,7 @@ def edit(
             and isinstance(op.get("data_type"), str)
         ]
         context = (
-            type_context.catalog(project, requested, target.stem)
+            type_context.ide_catalog(project, requested, target.stem, target=target)
             if any(name not in type_context.SCALARS for name in requested)
             else dict(types={}, hashes={})
         )
@@ -330,28 +335,25 @@ def edit(
             op["op"] == "set" for op in operations
         )
         try:
-            deferred_selector = bool(requested and not current)
+            probe = next(
+                (r for r in current if r["data_type"] in type_context.SCALARS), None
+            )
+            deferred_selector = bool(requested and probe is None)
             if requested and current:
-                probe = next(
-                    (r for r in current if r["data_type"] in type_context.SCALARS), None
-                )
-                if probe is None:
-                    raise BridgeError(
-                        "A scalar row is required for safe type-selector preflight."
+                if probe is not None:
+                    choices = adapter.selector_choices(
+                        probe["name"], "data_type", probe["data_type"]
                     )
-                choices = adapter.selector_choices(
-                    probe["name"], "data_type", probe["data_type"]
-                )
-                if any(choices.count(dtype) != 1 for dtype in requested):
-                    raise BridgeError(
-                        "Requested type is unavailable/ambiguous in the IDE selector."
-                    )
-                again = snapshot(adapter, target)
-                if any(
-                    again[k] != before[k]
-                    for k in ("source", "variables", "native_sha256", "modified")
-                ):
-                    raise BridgeError("Type-selector preflight changed the document.")
+                    if any(choices.count(dtype) != 1 for dtype in requested):
+                        raise BridgeError(
+                            "Requested type is unavailable/ambiguous in the IDE selector."
+                        )
+                    again = snapshot(adapter, target)
+                    if any(
+                        again[k] != before[k]
+                        for k in ("source", "variables", "native_sha256", "modified")
+                    ):
+                        raise BridgeError("Type-selector preflight changed the document.")
             for op in operations:
                 type_context.check(context)
                 if op["op"] == "add":
@@ -418,7 +420,7 @@ def edit(
                         # to uppercase. Accept only that observed spelling or
                         # the exact selector name; all other row fields remain
                         # part of the full-table comparison.
-                        if (context["types"].get(op["data_type"], {}).get("code") == 256
+                        if (context["types"].get(op["data_type"], {}).get("code") in (256, "ide_resolved")
                                 and actual[-1]["data_type"] == op["data_type"].upper()):
                             desired[-1]["data_type"] = op["data_type"].upper()
                         if (
@@ -489,6 +491,8 @@ def edit(
                 autoshop_compile_verified=False,
                 initialization_scope="scalar_exact; complex IDE defaults recorded as opaque, display previews may differ",
             )
+            if any(row.get("code") == "ide_resolved" for row in context["types"].values()):
+                result["named_type_resolution"] = "IDE selector confirmed; native descriptor awaits save/readback"
             if save:
                 assert_hash(target, expected.lower())
                 type_context.check(context)
@@ -498,6 +502,13 @@ def edit(
                     raw, target.read_bytes(), operations, context["types"], current
                 )
                 new_obj = parse(target.read_bytes())
+                if "named_type_resolution" in result:
+                    result["named_type_resolution"] = dict(
+                        status="native_verified", variables=[
+                            dict(name=v.name, data_type=v.type_text, type_code=v.type_code)
+                            for v in new_obj.variables[len(before["variables"]):]
+                        ],
+                    )
                 write_json_new(
                     saved / "native_added_variables.json",
                     dict(

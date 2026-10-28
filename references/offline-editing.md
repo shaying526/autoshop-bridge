@@ -98,7 +98,7 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 
 未观察的分隔符返回 `offline_initializer_comment_unobserved`，含 `error_context`：target、operation_index、variable、category、structure、member、member_index、field、原comment、characters及character_positions、index_base=0、reason与requires。操作、成员和字符索引为0基；错误正文的成员序号为1基。普通候选格式拒绝保留 `offline_invalid_request`，补target和original_error；冲突继续 `offline_conflict`。调用方须处理未知错误码，不靠匹配错误文案判断状态。诊断可能含原注释，分享日志前审阅。
 
-这不增加格式通用性：混合空注释、嵌套、数组等原限制保留。ST若有非零未知行字段仍拒绝，不能清零或压成一行绕过；结构初值修复不保证完整多目标请求通过。check/build不写工程；apply/restore的独占句柄、全部基线、唯一备份、完整候选重建及回读保护未变。
+该s9记录不代表混合注释当时已支持；2026-10-28开发批次根据正常IDE样本补齐了混合空/非空注释编码，组合验收见开发报告。嵌套、数组等未知布局仍单列。ST若有非零未知行字段仍拒绝，不能清零或压成一行绕过；结构初值修复不保证完整多目标请求通过。check/build不写工程；apply/restore的独占句柄、全部基线、唯一备份、完整候选重建及回读保护未变。
 
 ## changes.json
 
@@ -126,7 +126,7 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 
 file为登记中准确的相对路径。source_file相对changes.json目录解析，为UTF-8无BOM正文，不相对当前工作目录。禁止绝对成员路径、目录逃逸和链接。不修改变量时省略variable_operations；不修改正文时省略source_file。支持1–100目标；FB/GVT每目标1–32变量操作。正文上限1000行（LF+1，含末尾空行）。同一FB先构建变量候选，再处理正文。
 
-FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；成员注释目前仅全空或全部非空可用。V4.11.0.5 实际INOUT保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续拒绝。混合注释、嵌套、数组、STRING拒绝。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。结构VAR新增编码与真实IDE已保存记录逐字节匹配，文件模式覆盖/重开尚未单独验收。
+FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；全空、全非空和混合空/非空成员注释采用正常IDE已观察的默认串。仅有注释的成员输出键值，分隔符按原成员位置保留；末成员为空时可能保留尾随`, `，不trim或补空注释。V4.11.0.5 实际保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续明确报未实现。嵌套、数组、STRING新增profile仍待。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。既有全有/全无注释VAR的文件覆盖/重开已完成；混合注释的8条完整IDE记录与新候选逐字节相同，本批组合验收另记结果。
 
 开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；限定FBI离线新增见s18段落，任意容器构造仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
 

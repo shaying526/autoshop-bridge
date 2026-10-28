@@ -73,31 +73,69 @@ class WindowsInstanceSession(WindowsTableSession):
         self.assert_no_cell_edit()
         rows, names = [], None
         while True:
-            page = self.accessible("instance_grid_page", self.variable_grid(), offset=len(rows), limit=16)
-            if (not isinstance(page, dict) or set(page) != {"schema", "scope", "offset", "limit", "total", "names", "columns", "rows"}
-                    or page["schema"] != 1 or page["scope"] != "fbi_declarations_page"
-                    or type(page["offset"]) is not int or page["offset"] != len(rows)
-                    or page["limit"] != 16 or type(page["total"]) is not int or not 0 <= page["total"] <= 4096
-                    or not isinstance(page["names"], list) or len(page["names"]) != page["total"]
-                    or any(not isinstance(name, str) or not name.isidentifier() for name in page["names"])
-                    or len({name.casefold() for name in page["names"]}) != page["total"]
-                    or page["columns"] != list(INSTANCE_COLUMNS.values())
-                    or not isinstance(page["rows"], list) or len(page["rows"]) != min(16, page["total"] - len(rows))):
-                raise BridgeError("Incomplete/inconsistent FBI grid page.")
+            page = self._read_page(len(rows), 16)
             if names is not None and names != page["names"]:
                 raise BridgeError("FBI declaration identities changed between pages.")
             names = page["names"]
-            for index, row in enumerate(page["rows"], len(rows)):
-                if (not isinstance(row, dict) or set(row) != set(INSTANCE_COLUMNS.values())
-                        or any(not isinstance(value, str) for value in row.values())
-                        or row[INSTANCE_COLUMNS["name"]] != names[index]
-                        or row[INSTANCE_COLUMNS["row"]] != str(index + 1)):
-                    raise BridgeError("FBI page row identity/columns differ.")
             rows.extend(page["rows"])
             if len(rows) == len(names):
                 self.last_grid_read = dict(read_scope="declarations", declaration_rows=len(rows),
                                            paged=True, page_size=16, complete=True)
                 return rows
+
+    def _read_page(self, offset, limit):
+        """Read all declaration identities and complete values for one range."""
+        if type(offset) is not int or not 0 <= offset <= 4096 or type(limit) is not int or not 1 <= limit <= 32:
+            raise BridgeError("Invalid FBI page range.")
+        self.assert_no_cell_edit()
+        page = self.accessible("instance_grid_page", self.variable_grid(), offset=offset, limit=limit)
+        if (not isinstance(page, dict) or set(page) != {"schema", "scope", "offset", "limit", "total", "names", "columns", "rows"}
+                or page["schema"] != 1 or page["scope"] != "fbi_declarations_page"
+                or type(page["offset"]) is not int or page["offset"] != offset
+                or type(page["limit"]) is not int or page["limit"] != limit
+                or type(page["total"]) is not int or not 0 <= offset <= page["total"] <= 4096
+                or not isinstance(page["names"], list) or len(page["names"]) != page["total"]
+                or any(not isinstance(name, str) or not name.isidentifier() for name in page["names"])
+                or len({name.casefold() for name in page["names"]}) != page["total"]
+                or page["columns"] != list(INSTANCE_COLUMNS.values())
+                or not isinstance(page["rows"], list) or len(page["rows"]) != min(limit, page["total"] - offset)):
+            raise BridgeError("Incomplete/inconsistent FBI grid page.")
+        for index, row in enumerate(page["rows"], offset):
+            if (not isinstance(row, dict) or set(row) != set(INSTANCE_COLUMNS.values())
+                    or any(not isinstance(value, str) for value in row.values())
+                    or row[INSTANCE_COLUMNS["name"]] != page["names"][index]
+                    or row[INSTANCE_COLUMNS["row"]] != str(index + 1)):
+                raise BridgeError("FBI page row identity/columns differ.")
+        return page
+
+    def set_new_cell(self, variable, field, expected, value, known_rows):
+        """Read one new last row per cell; the caller must prove the final table.
+
+        All names/count/columns and the new row's complete values remain live.
+        Existing non-name values are frozen here and re-read before any save.
+        This adapter is exclusively for the current add batch's last new row.
+        """
+        if field == "name":
+            if variable != "#row:" + str(len(known_rows) + 1) or expected != "" or not identifier(value):
+                raise BridgeError("New-instance writes require the exact next spare row.")
+            prefix = known_rows
+            names = [row["name"] for row in known_rows] + [value]
+        elif field in ("data_type", "comment") and known_rows:
+            if variable != known_rows[-1]["name"] or expected != known_rows[-1][field]:
+                raise BridgeError("New-instance writes require the current last-row baseline.")
+            prefix = known_rows[:-1]
+            names = [row["name"] for row in known_rows]
+        else:
+            raise BridgeError("Unsupported new-instance cell operation.")
+        self.write_cell(variable, field, expected, value)
+        if field == "name":
+            self.validate_main()
+            self.locate_editor()
+        page = self._read_page(len(prefix), 1)
+        if page["names"] != names or page["total"] != len(names):
+            raise BridgeError("FBI declaration names/count changed during new-row edit.")
+        raw_prefix = [{INSTANCE_COLUMNS[key]: row[key] for key in INSTANCE_COLUMNS} for row in prefix]
+        return normalize(raw_prefix + page["rows"])
 
     def set_cell(self, variable, field, expected, value):
         self.write_cell(variable, field, expected, value)
@@ -222,10 +260,11 @@ def connect(project, table, pid=None, open_if_missing=False):
     return adapter, target, opened, inventory
 
 
-def assert_native(raw, rows):
+def assert_native(raw, rows, *, allow_allocation_preview=False):
     native = instances.parse(raw)["instances"]
     if len(native) != len(rows):
         raise BridgeError("Global instance editor/native count differs.")
+    differences = []
     for var, row in zip(native, rows):
         if (
             var["name"] != row["name"]
@@ -238,12 +277,23 @@ def assert_native(raw, rows):
         address = var["uninterpreted_metadata"]["address_raw"]
         if address == 0xFFFFFFFF and row["allocated_address"] == "":
             continue
+        if allow_allocation_preview:
+            display = row["allocated_address"]
+            if (not isinstance(display, str)
+                    or re.fullmatch(r"(?:0[xX])?[0-9a-fA-F]{1,8}", display) is None):
+                raise BridgeError("Unsupported instance allocation preview; expected uint32 hex or an unallocated native address.")
+            shown = int(display, 16)
+            if shown != address:
+                differences.append(dict(name=var["name"], native_address=address,
+                                        editor_address=display))
+            continue
         try:
             shown = int(row["allocated_address"], 16)
         except ValueError as exc:
             raise BridgeError("Unsupported instance allocation display.") from exc
         if address != shown:
             raise BridgeError("Global instance editor/native address differs.")
+    return differences
 
 
 def snapshot(adapter, target):
@@ -307,23 +357,56 @@ def validate(document, rows, types, occupied=()):
             or any(ord(c) < 32 for c in op["comment"])
         ):
             raise BridgeError(
-                "Instance add requires a unique name, parsed project FB, initial_value=null and bounded comment."
+                "Instance add requires a unique name, identified project/qualified library FB, initial_value=null and bounded comment."
             )
         names.add(op["name"].casefold())
     return copy.deepcopy(ops)
 
 
-def verify_preserved(before, after, ops):
+def verify_preserved(before, after, ops, *, expected_allocation_rows=None):
     old, new = instances.parse(before), instances.parse(after)
     a, b = old["instances"], new["instances"]
+    allocation_updates = []
+    if expected_allocation_rows is not None:
+        if not isinstance(expected_allocation_rows, list) or any(
+            not isinstance(row, dict) or set(row) != set(INSTANCE_COLUMNS)
+            or any(not isinstance(value, str) for value in row.values())
+            for row in expected_allocation_rows
+        ):
+            raise BridgeError("Expected a complete frozen IDE allocation table.")
+        assert_native(before, expected_allocation_rows, allow_allocation_preview=True)
     if [r["name"] for r in b] != [r["name"] for r in a] + [op["name"] for op in ops]:
         raise BridgeError("Saved instance names/order differ.")
-    for first, second in zip(a, b):
+    for index, (first, second) in enumerate(zip(a, b)):
         start, end = first["record_offset"], second["record_offset"]
-        if (
-            before[start : start + first["record_bytes"]]
-            != after[end : end + second["record_bytes"]]
-        ):
+        old_record = before[start : start + first["record_bytes"]]
+        new_record = after[end : end + second["record_bytes"]]
+        if old_record == new_record:
+            continue
+        allowed = False
+        if expected_allocation_rows is not None and len(old_record) == len(new_record):
+            preview = expected_allocation_rows[index]["allocated_address"]
+            old_address = first["uninterpreted_metadata"]["address_raw"]
+            new_address = second["uninterpreted_metadata"]["address_raw"]
+            # Decode the known flags/address pair boundary, never infer it from
+            # a project offset or reconstruct an existing record's encoding.
+            offsets = []
+            for raw, row in ((before, first), (after, second)):
+                reader = instances.Reader(raw, row["record_offset"], row["record_offset"] + row["record_bytes"])
+                reader.take(8)
+                reader.string()
+                reader.string()
+                reader.u32()  # flags are kept byte-exact.
+                offsets.append(reader.pos - row["record_offset"])
+            offset = offsets[0]
+            allowed = (bool(preview) and old_address != new_address and new_address == int(preview, 16)
+                       and offsets[0] == offsets[1]
+                       and old_record[:offset] == new_record[:offset]
+                       and old_record[offset + 4:] == new_record[offset + 4:])
+            if allowed:
+                allocation_updates.append(dict(name=first["name"], before=old_address,
+                                               after=new_address, editor_address=preview))
+        if not allowed:
             raise BridgeError(
                 "Existing native instance record changed: " + first["name"]
             )
@@ -331,12 +414,15 @@ def verify_preserved(before, after, ops):
         if row["data_type"] != op["data_type"] or row["comment"] != op["comment"]:
             raise BridgeError("Saved new global instance differs.")
     # IDE owns opaque archive sections; compare/report them, never patch them.
-    return dict(
+    result = dict(
         opaque_prefix_changed=old["opaque_prefix_sha256"]
         != new["opaque_prefix_sha256"],
         opaque_suffix_changed=old["opaque_suffix_sha256"]
         != new["opaque_suffix_sha256"],
     )
+    if expected_allocation_rows is not None:
+        result["native_allocation_updates"] = allocation_updates
+    return result
 
 
 def add(
@@ -375,7 +461,11 @@ def add(
         before = snapshot(a, t)
         if before["modified"]:
             raise BridgeError("Global instance table has unsaved changes.")
-        assert_native(raw, before["rows"])
+        allocation_preview = dict(
+            scope="not_saved_native_allocation",
+            before=assert_native(raw, before["rows"], allow_allocation_preview=True),
+            after_save=None,
+        )
         if not before["rows"] and not EMPTY_INSTANCE_ADDITIONS_VALIDATED:
             raise BridgeError(
                 "Empty global instance additions are pending AutoShop validation; no row was created."
@@ -386,15 +476,14 @@ def add(
             for op in (raw_ops if isinstance(raw_ops, list) else [])
             if isinstance(op, dict) and isinstance(op.get("data_type"), str)
         ]
-        context = type_context.catalog(project, requested)
+        context = type_context.ide_catalog(project, requested, fb_only=True)
         occupied = []
         for item in inventory["files"]:
             if item.get("kind") == "global_variables":
-                if item.get("status") != "parsed":
-                    raise BridgeError(
-                        "All global tables must be parsed for name collision checks."
-                    )
-                occupied.extend(r["name"] for r in item["table"]["rows"])
+                if item.get("status") == "parsed":
+                    occupied.extend(r["name"] for r in item["table"]["rows"])
+                if not item.get("sha256"):
+                    raise BridgeError("Global table has no readable hash baseline: " + item["path"])
                 context["hashes"][item["path"]] = item["sha256"]
         ops = validate(document, before["rows"], context["types"], occupied)
         type_context.check(context)
@@ -404,14 +493,25 @@ def add(
                 operations=ops,
                 instance_count=len(before["rows"]),
                 selector_preflight="pending_first_default_row" if not before["rows"] else "not_performed",
+                allocation_preview=allocation_preview,
+                native_allocation_updates=[],
+                compile_pending=True,
             )
         backup = create_backup(t, raw, backup_root, "editor_instances")
         write_json_new(backup / "editor_before.json", before)
         write_json_new(backup / "instance_changes.json", document)
         write_json_new(backup / "type_context.json", context)
+        write_json_new(backup / "allocation_preview_before.json", allocation_preview)
         if snapshot(a, t) != before:
             raise BridgeError("Instance table changed during backup.")
         current = copy.deepcopy(before["rows"])
+        new_writer = getattr(a, "set_new_cell", None)
+
+        def write_new_cell(variable, field, expected_value, value):
+            if callable(new_writer):
+                return new_writer(variable, field, expected_value, value, known_rows=current)
+            return a.set_cell(variable, field, expected_value, value)
+
         try:
             # An empty table has no selector until AutoShop creates its first
             # named row. Validate that exact default before deferred preflight.
@@ -429,7 +529,7 @@ def add(
             for op in ops:
                 assert_hash(t, expected.lower())
                 type_context.check(context)
-                actual = a.set_cell(
+                actual = write_new_cell(
                     "#row:" + str(len(current) + 1), "name", "", op["name"]
                 )
                 if len(actual) != len(current) + 1 or actual[:-1] != current:
@@ -465,7 +565,7 @@ def add(
                     type_context.check(context)
                     preflight_pending = False
                 if row["data_type"] != op["data_type"]:
-                    actual = a.set_cell(
+                    actual = write_new_cell(
                         op["name"], "data_type", row["data_type"], op["data_type"]
                     )
                     desired = copy.deepcopy(current)
@@ -483,7 +583,7 @@ def add(
                 if current[-1]["comment"] != op["comment"]:
                     desired = copy.deepcopy(current)
                     desired[-1]["comment"] = op["comment"]
-                    actual = a.set_cell(
+                    actual = write_new_cell(
                         op["name"], "comment", current[-1]["comment"], op["comment"]
                     )
                     if actual != desired:
@@ -505,22 +605,35 @@ def add(
                 opened=opened,
                 requires_manual_save=True,
                 autoshop_compile_verified=False,
+                allocation_preview=allocation_preview,
+                native_allocation_updates=[],
+                compile_pending=True,
             )
             if save:
                 assert_hash(t, expected.lower())
                 type_context.check(context)
                 a.save()
                 saved = t.read_bytes()
-                assert_native(saved, a.grid())
-                if a.dirty() or a.grid() != current:
+                saved_rows = a.grid()
+                allocation_preview["after_save"] = assert_native(
+                    saved, saved_rows, allow_allocation_preview=True
+                )
+                if a.dirty() or saved_rows != current:
                     raise BridgeError(
                         "Saved instance table differs from expected buffer."
                     )
+                preservation = verify_preserved(
+                    raw, saved, ops, expected_allocation_rows=before["rows"]
+                )
+                allocation_updates = preservation.pop("native_allocation_updates")
+                if allocation_updates:
+                    allocation_preview["scope"] = "editor_preview_with_native_updates"
                 result.update(
                     status="instances_saved",
                     sha256=sha256(saved),
                     requires_manual_save=False,
-                    archive_changes=verify_preserved(raw, saved, ops),
+                    archive_changes=preservation,
+                    native_allocation_updates=allocation_updates,
                 )
                 write_json_new(
                     backup / "native_added_instances.json",

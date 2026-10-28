@@ -163,6 +163,7 @@ public static class BridgeAccessibility {
    if(found.Count!=1)throw new Exception("Cell changed during reveal");
    Node cell=found[0];
    int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   if(gh<=20)throw new Exception("Variable declaration area is collapsed or too short to show data rows; expand the declaration pane before editing. grid=["+gx+","+gy+","+gw+","+gh+"], cell=["+x+","+y+","+w+","+h+"]");
    int sx=x+w/2,sy=y+h/2;
    if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)return cell;
    if(w<=2 || h<=2)throw new Exception("Variable column is hidden");

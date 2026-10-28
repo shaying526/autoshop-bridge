@@ -1,9 +1,23 @@
-"""Strict read-only recognition of the observed structure member sequence."""
+"""Observed structure member sequences and comment-default serialization."""
 
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats.fb import Reader
 from autoshop_bridge.formats.tables import TYPES as BUILTIN_TYPES
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
+
+
+def comment_initializer(members):
+    """Serialize ordered (name, comment) pairs using the IDE default grammar.
+
+    V4.11.0.5 emits only commented members, but appends a separator according
+    to the member's original position. A final uncommented member therefore
+    leaves a trailing comma and space. An entirely uncommented type is empty.
+    Callers qualify types/text; this helper neither parses nor escapes comments.
+    """
+    members = tuple(members)
+    parts = [name + ":=\x07" + comment + (", " if index < len(members) - 1 else "")
+             for index, (name, comment) in enumerate(members) if comment]
+    return "(" + "".join(parts) + ")" if parts else ""
 
 
 def parse(raw):

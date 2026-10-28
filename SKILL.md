@@ -11,6 +11,8 @@ description: Read and modify AutoShop PLC projects using bundled scripts. Use fo
 
 FBI已有实例的名称、注释和初值走[既有实例编辑](references/data-editing.md#fbi已有实例编辑)：文件模式修改完整原生字符串；编辑器初值明确指定工具箱成员路径，先读取真实成员旧值。文件模式不改引用，正常IDE改名可能自动保存引用，按结果清单核对。
 
+s20实现正常IDE选择点限定库类型和已登记LD功能块引用：LiteST宿主内部VAR用editor-variables，全局FBI用instances-editor-add及其FB专用选择器。准确根定义/哈希和真实选择器保证执行资格，不递归证明业务语义。平面结构混合空/非空成员注释两模式及关联改名采用同一已观察模板，保留末尾分隔符。详细例子、保存地址差量及尚未实现范围见[变量和表](references/data-editing.md)；本批已完成独立副本组合及恢复后的0错误编译；这些历史证据不代替调用者本次工程验收。
+
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
 说明中的**文件直改模式（方法一，Direct File Mode）**对应程序标识`file`，直接读写磁盘原生文件；**编辑器操作模式（方法二，Editor Mode）**对应`editor`，操作AutoShop编辑器缓冲并显式保存。这里只统一说明名称，不改命令、参数、API或结果状态。
@@ -33,7 +35,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-28.s19`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-29.s20`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
@@ -60,7 +62,7 @@ python -B $bridge source-read "$artifacts/calc-work" --start 1 --limit 20
 ## 必须停止的情况
 
 - 退出非0、`blocked`、目标/PID歧义、未知格式/布局、未保存用户内容、磁盘与缓冲基线不同、备份失败、模态提示或结果不确定：停止依赖写入。先保存诊断摘要/备份路径、只读核对当前状态，再决定恢复或请求用户处理；不盲目重放写入、不保存旧窗口、不假定回滚。
-- 旧文件入口发现行数变化或FB/FC行记录滞后，不能手补元数据；关闭工程后的ST/FB可按离线参考检查已实现profile，FC增删行仍用经授权的方法二。s15的offline系列支持已识别ST非零折叠缓存及增删行；未知值按具体行/字段/值报告，不清零绕过。混合成员注释等未实现范围另列。单程序上限1000行（LF数+1，含空行）。
+- 旧文件入口发现行数变化或FB/FC行记录滞后，不能手补元数据；关闭工程后的ST/FB可按离线参考检查已实现profile，FC增删行仍用经授权的方法二。s15的offline系列支持已识别ST非零折叠缓存及增删行；未知值按具体行/字段/值报告，不清零绕过。嵌套/值初始化等尚未实现范围另列，平面混合成员注释无需删注释绕过。单程序上限1000行（LF数+1，含空行）。
 - 默认scan仍仅识别`LD`；独立梯形图入口支持已观察格式的只读记录查询，未知布局拒绝。含内嵌ST禁止整图复制，先读磁盘正文，当前物化控件另读且不冒充完整实时混合图。系统变量只读；不编辑梯形图、不自动编译、不从编译面板取结果，不做PLC下载、启停或强制IO。更多未开放范围见能力表。
 
 ## 结果交付

@@ -9,6 +9,7 @@ import struct
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import fb, tables
+from autoshop_bridge.formats.structure import comment_initializer
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
@@ -37,8 +38,9 @@ def flat_structure_initial(raw, name):
     """Observed flat scalar profiles; reject unobserved default grammars.
 
     Nonempty scalar-member comments were observed in saved IN/OUT structures.
-    All-empty comments produce an empty initializer. Mixed comments, nested
-    types, strings and explicit defaults require their own evidence profile.
+    All-empty comments produce an empty initializer. Mixed comments use the
+    same position-based separator rule observed in VAR/IN/OUT/INOUT saves on
+    2026-10-28. Nested types, strings and explicit defaults remain unsupported.
     AutoShop V4.11.0.5 saves literal '=' and '#' inside member comments
     unchanged (INOUT probe, 2026-10-26). No escaping is inferred for other
     initializer delimiters; definition comments themselves are never rewritten.
@@ -46,7 +48,6 @@ def flat_structure_initial(raw, name):
     definition = tables.parse(raw, "stru")
     if definition.name != name or not definition.rows:
         raise BridgeError("Expected the exact nonempty structure definition.")
-    parts = []
     for index, row in enumerate(definition.rows):
         if row.type_code not in SCALARS.values() or row.type_text not in (
             "", tables.TYPES.get(row.type_code)
@@ -67,13 +68,7 @@ def flat_structure_initial(raw, name):
                              character_positions=positions, index_base=0,
                              reason="unobserved_delimiter", requires="independent_ide_probe"),
             )
-        if row.comment:
-            parts.append(row.name + ":=\x07" + row.comment)
-    if not parts:
-        return ""
-    if len(parts) != len(definition.rows):
-        raise BridgeError("Mixed structure comments require a separate initializer profile.")
-    return "(" + ", ".join(parts) + ")"
+    return comment_initializer((row.name, row.comment) for row in definition.rows)
 
 
 def _record(op, definitions):
