@@ -15,6 +15,8 @@ s20实现正常IDE选择点限定库类型和已登记LD功能块引用：LiteST
 
 s21方法一支持库/已登记LD实例：VAR库add用`type_kind:"function_block"`显式选择256记录，FBI天然FB、不带该字段；类型存在性与业务语义交编译，不宣称冻结外部安装库。限定样本、单项/批量写入、重开完整回读及组合/恢复0错误编译已验。JSON和边界见[变量和表](references/data-editing.md)；先核对安装修订号，历史验证不代替本次工程验收。
 
+s22限定原生验收完成：未知HCPP工程可用独立[项目登记基线](references/project-registration.md)显式核对扫描、声明编辑及正常创建；默认strict及旧正文凭据保持。FC离线正文新增限定匹配全零输入、保留旧行表路径，规则见[变量和表](references/data-editing.md)。本包为s22；本轮空FBI两项与FC组合21:03:55编译0错误，第三项终态写入与恢复均完成，21:11:23及21:16:23均0错误；完整包另验。
+
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
 说明中的**文件直改模式（方法一，Direct File Mode）**对应程序标识`file`，直接读写磁盘原生文件；**编辑器操作模式（方法二，Editor Mode）**对应`editor`，操作AutoShop编辑器缓冲并显式保存。这里只统一说明名称，不改命令、参数、API或结果状态。
@@ -37,7 +39,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-29.s21`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-29.s22`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
@@ -48,7 +50,7 @@ python -B $bridge project-summary --project $project --limit 20
 4. 逐条检查退出码及JSON状态后再继续。备份成功、当前原文/哈希和完整回读不能省。保存后重新导出用于后续修改；同一工程/会话串行执行。
 5. 分别报告缓冲更新、原生保存、回读、用户编译反馈和业务行为验证。只读或本地候选任务完成后，不额外写入/保存。
 
-离线开发先export冻结直接HCP和依赖，再check/build，使用返回的plan摘要apply；所有备份先于首写，完整回读后由用户重开并编译。不要自动关闭用户工程。HCP占用而普通编辑器入口拒绝时，可按离线开发参考先由用户关闭工程，registration-capture后重开，再给editor-read/sync传--registration-receipt；这只允许已核对目标正文，不授权结构变更，不默认信任旧HCPP，保存后旧凭据失效。
+离线开发先export冻结直接HCP和依赖，再check/build，使用返回的plan摘要apply；所有备份先于首写，完整回读后由用户重开并编译。不要自动关闭用户工程。HCP占用时，已有正文可沿原registration-capture及editor-read/sync的--registration-receipt路径；声明/创建等改读[独立项目登记基线](references/project-registration.md)，按已支持CLI显式绑定。两种凭据不混用、不默认信任旧HCPP，保存后旧文件基线失效，捕获命令本身不关开工程。
 
 常用只读调用：
 
@@ -64,7 +66,7 @@ python -B $bridge source-read "$artifacts/calc-work" --start 1 --limit 20
 ## 必须停止的情况
 
 - 退出非0、`blocked`、目标/PID歧义、未知格式/布局、未保存用户内容、磁盘与缓冲基线不同、备份失败、模态提示或结果不确定：停止依赖写入。先保存诊断摘要/备份路径、只读核对当前状态，再决定恢复或请求用户处理；不盲目重放写入、不保存旧窗口、不假定回滚。
-- 旧文件入口发现行数变化或FB/FC行记录滞后，不能手补元数据；关闭工程后的ST/FB可按离线参考检查已实现profile，FC增删行仍用经授权的方法二。s15的offline系列支持已识别ST非零折叠缓存及增删行；未知值按具体行/字段/值报告，不清零绕过。嵌套/值初始化等尚未实现范围另列，平面混合成员注释无需删注释绕过。单程序上限1000行（LF数+1，含空行）。
+- 旧文件入口发现行数变化或FB/FC行记录滞后，不能手补元数据；关闭工程后的ST/FB按离线参考检查已实现profile。s22的offline FC仅接受正文/行表匹配且三个未知行字段全零的输入，写正文时保留完整旧行表，输出可能滞后，不能制造新LF行表或直接续写旧工作目录。未知值按具体行/字段/值报告，不清零绕过；详见[FC说明](references/data-editing.md)。嵌套/值初始化等范围另列，单程序上限1000行（LF数+1，含空行）。
 - 默认scan仍仅识别`LD`；独立梯形图入口支持已观察格式的只读记录查询，未知布局拒绝。含内嵌ST禁止整图复制，先读磁盘正文，当前物化控件另读且不冒充完整实时混合图。系统变量只读；不编辑梯形图、不自动编译、不从编译面板取结果，不做PLC下载、启停或强制IO。更多未开放范围见能力表。
 
 ## 结果交付

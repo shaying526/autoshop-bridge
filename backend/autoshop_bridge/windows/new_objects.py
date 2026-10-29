@@ -88,14 +88,25 @@ class WindowsObjectCreation:
         self.baseline_state = state
         names = [value for node in state['root'].findall('file')
                  for value in [node.findtext('Caption') or Path(node.findtext('FileName') or '').stem] if value]
-        return dict(project=str(self.project), identity=dict(self.identity), native_hashes=hashes,
+        result = dict(project=str(self.project), identity=dict(self.identity), native_hashes=hashes,
                     registration_sha256=sha256(state['raw']), object_names=names,
                     dirty_documents=s['dirty'], dialogs=s['dialogs'], cell_edits=s['cell_edits'])
+        from autoshop_bridge.projects.registration_baseline import current
+        provider = current()
+        if provider is not None:
+            result.update(project_registration_baseline=provider.receipt,
+                          registration_sha256=sha256(state['saved_hcp']),
+                          mirror_sha256=sha256(state['raw']))
+        return result
 
     def backup(self, plan):
         state = self.baseline_state
         path = create_backup(state['mirror'], state['raw'], self.backup_root, 'before_ui_object_creation')
-        write_new(path / 'registration_from_mirror.hcp', state['saved_hcp'])
+        qualified = 'project_registration_baseline' in plan['baseline']
+        write_new(path / ('registration_from_closed_hcp.hcp' if qualified else 'registration_from_mirror.hcp'), state['saved_hcp'])
+        if qualified:
+            write_json_new(path / 'project-registration-baseline.json', plan['baseline']['project_registration_baseline'])
+            write_json_new(path / 'mirror-diagnostic.json', state['mirror_diagnostic'])
         write_json_new(path / 'plan.json', plan)
         sources = []
         for relative, expected in plan['baseline']['native_hashes'].items():
@@ -107,7 +118,8 @@ class WindowsObjectCreation:
         write_json_new(path / 'sources.json', sources)
         self.plan = plan
         return dict(path=str(path), verified=True, unique=True, source_count=len(sources),
-                    registration_source='verified_saved_mirror', direct_hcp_verified=state['direct_hcp_verified'])
+                    registration_source='closed_hcp_live_tree_verified' if qualified else 'verified_saved_mirror',
+                    direct_hcp_verified=state['direct_hcp_verified'])
 
     def record(self, backup, value):
         self.sequence += 1
@@ -185,14 +197,25 @@ class WindowsObjectCreation:
     def guard_before_submit(self, plan):
         self.driver._guard()
         require(self.dialog.inspect() == self.configured, 'Creation dialog changed before submission')
-        hashes, state = self.source_hashes()
-        require(hashes == plan['baseline']['native_hashes'] and sha256(state['raw']) == plan['baseline']['registration_sha256'],
+        from contextlib import nullcontext
+        from autoshop_bridge.projects.registration_baseline import current
+        provider = current()
+        with provider.known_creation_dialog(self.configured['dialog_hwnd']) if provider else nullcontext():
+            hashes, state = self.source_hashes()
+        registration = state['saved_hcp'] if provider else state['raw']
+        require(hashes == plan['baseline']['native_hashes'] and sha256(registration) == plan['baseline']['registration_sha256'],
                 'Native/registration baseline changed before submission')
+        if provider:
+            require(sha256(state['raw']) == plan['baseline']['mirror_sha256'], 'Mirror changed before submission')
         require(not any(p.stem.casefold() == plan['name'].casefold() for p in self.project.iterdir()),
                 'New object name is occupied on disk')
 
     def submit_dialog(self):
         self.driver._guard()
+        from autoshop_bridge.projects.registration_baseline import current
+        provider = current()
+        if provider:
+            provider.mark_creation(self.plan['kind'], self.plan['name'])
         self.dialog.submit()
 
     def _target(self, plan):

@@ -30,13 +30,14 @@ def _require(condition, code, message, context=None):
         raise receipts.RegistrationEvidenceError(code, message, context=context)
 
 
-def normalize_tree_inventory(raw, receipt):
+def normalize_tree_inventory(raw, receipt, *, category_kinds=None):
     """Map complete native tree items in supported categories, without guessing.
 
     Unknown nodes outside supported categories are reported, not treated as
     editable objects or evidence of complete configuration-object identity.
     Within a supported category an unknown/misclassified object fails closed.
     """
+    categories = CATEGORY_KINDS if category_kinds is None else category_kinds
     _require(isinstance(raw, dict) and raw.get("profile") == "native-tree-items-msaa-v1"
              and raw.get("complete") is True and raw.get("includes_collapsed_items") is True,
              "registration_needs_refresh", "A complete native tree inventory is required.")
@@ -116,17 +117,17 @@ def normalize_tree_inventory(raw, receipt):
                 continue
             _require(name in ("结构体", "数据类型"), "registration_stale",
                      "Unmapped object in the observed global-variable container: {}.".format(name))
-        if name in CATEGORY_KINDS:
+        if name in categories:
             _require(name not in category_nodes, "registration_needs_refresh", "Duplicate supported category name.")
             category_nodes[name] = index
             continue
         ancestor = parent
-        while ancestor != -1 and nodes[ancestor]["name"] not in CATEGORY_KINDS:
+        while ancestor != -1 and nodes[ancestor]["name"] not in categories:
             ancestor = nodes[ancestor]["parent"]
         if ancestor == -1:
             unclassified.append(dict(index=index, parent=parent, name=name))
             continue
-        kinds = CATEGORY_KINDS[nodes[ancestor]["name"]]
+        kinds = categories[nodes[ancestor]["name"]]
         record_object(index, name, matches_for(name, kinds))
     objects.sort(key=lambda item: (item["kind"], item["caption"]))
     _require(objects == expected, "registration_stale", "Supported project-object set differs from closed HCP.",
@@ -139,7 +140,7 @@ def normalize_tree_inventory(raw, receipt):
                 caption_aliases=caption_aliases,
                 excluded_registration_files=[row["file"] for row in receipt["registration_rows"]
                                              if row["file"] and (receipts.TREE_KINDS.get(Path(row["file"]).suffix.lower())
-                                                                  not in receipts.LIVE_TREE_KINDS)],
+                                                                  not in set().union(*categories.values()))],
                 raw_tree=copy.deepcopy(raw), atomic_snapshot=False)
 
 

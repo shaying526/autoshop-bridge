@@ -144,7 +144,7 @@ def run(output):
                 changes.write_text(json.dumps(dict(schema=1, targets=[
                     dict(file="Logic.FB", source_file=source.name, variable_operations=declarations),
                     dict(file="MAIN.ST", source_file=source.name),
-                    dict(file="Calc.FC", variable_operations=[dict(op="add", name="refValue",
+                    dict(file="Calc.FC", source_file=source.name, variable_operations=[dict(op="add", name="refValue",
                         data_type="DINT", category="INOUT", initial_value=None, comment="Synthetic reference")]),
                     dict(file="EmptyCalc.FC", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, category=category, initial_value=None, comment="Synthetic FC")
@@ -186,7 +186,11 @@ def run(output):
                 empty_fc = fc.parse((project / "EmptyCalc.FC").read_bytes())
                 assert len(full_fc.variables) == 3 and len(empty_fc.variables) == 2
                 assert full_fc.variables[-1].fields == (3, 0xffffffff, 0)
-                assert full_fc.raw[full_fc.inner_offset - 4:] == old_fc.raw[old_fc.inner_offset - 4:]
+                assert full_fc.source == source.read_bytes()
+                assert full_fc.line_count == 3 and full_fc.line_table_count == old_fc.line_table_count == 1
+                old_tail = old_fc.payload_offset + old_fc.payload_length
+                new_tail = full_fc.payload_offset + full_fc.payload_length
+                assert full_fc.raw[new_tail:] == old_fc.raw[old_tail:]
                 for old, new in zip(old_fc.variables, full_fc.variables):
                     assert old_fc.raw[old.offset:old.end] == full_fc.raw[new.offset:new.end]
                 new_fbi = (project / "Instances.fbi").read_bytes()
@@ -281,6 +285,7 @@ def run(output):
                     fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,
                     fc_nonempty_and_empty_additions=True,
+                    fc_source_line_changes_preserve_matched_zero_rows=True,
                     declaration_delete_five_kinds=True, stale_delete_replay_refused=True,
                     old_records_preserved=True, non_targets_preserved=True, restored_all_bytes=True,
                     elapsed_seconds=round(time.perf_counter()-start, 6)))

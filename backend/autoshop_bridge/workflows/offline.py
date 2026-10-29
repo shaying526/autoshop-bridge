@@ -20,6 +20,7 @@ from autoshop_bridge import storage
 from autoshop_bridge.formats import fb, fc, st, tables, instances, declaration_delete
 from autoshop_bridge.formats.offline_source import (
     ST_FOLD_ROWS_V1, FB_PRESERVE_ROWS_V1, rebuild_fold_row_st, rebuild_preserved_row_fb,
+    FC_ZERO_ROWS_V1, rebuild_zero_row_fc,
 )
 from autoshop_bridge.formats.offline_variables import rebuild_fb, FBInstanceType
 from autoshop_bridge.projects import inventory, deletion_preflight
@@ -330,17 +331,20 @@ def default_candidate_builder(entry, raw, source, definitions):
         result = declaration_delete.rebuild(raw, suffix[1:], operations)
         if suffix == ".fb" and source is not None:
             return rebuild_preserved_row_fb(result, source, profile=FB_PRESERVE_ROWS_V1)
+        if suffix == ".fc" and source is not None:
+            return rebuild_zero_row_fc(result, source, profile=FC_ZERO_ROWS_V1)
         if source is not None:
-            raise BridgeError("Deletion source_file is supported only for FB; FC source changes remain unsupported offline.")
+            raise BridgeError("Deletion source_file is supported only for FB/FC targets.")
         return result
     if suffix == ".fb":
         result = rebuild_fb(raw, entry["variable_operations"], definitions) if "variable_operations" in entry else raw
         return rebuild_preserved_row_fb(result, source, profile=FB_PRESERVE_ROWS_V1) if source is not None else result
     if suffix == ".st" and "variable_operations" not in entry and source is not None:
         return rebuild_fold_row_st(raw, source, profile=ST_FOLD_ROWS_V1)
-    if suffix == ".fc" and source is None and "variable_operations" in entry:
+    if suffix == ".fc":
         from autoshop_bridge.formats.offline_fc import rebuild
-        return rebuild(raw, entry["variable_operations"])
+        result = rebuild(raw, operations) if operations else raw
+        return rebuild_zero_row_fc(result, source, profile=FC_ZERO_ROWS_V1) if source is not None else result
     if suffix == ".gvt" and source is None and "variable_operations" in entry:
         from autoshop_bridge.formats.offline_globals import rebuild
         return rebuild(raw, entry["variable_operations"], structure_definitions=definitions)
@@ -370,17 +374,17 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
             if any(not isinstance(op, dict) or op.get("op") != "delete" for op in operations):
                 raise BridgeError("Mixed delete and add/set batches are unsupported.")
             suffix = Path(entry["file"]).suffix.lower()
-            if suffix == ".fc" and (source is not None or not operations):
-                raise BridgeError("Offline FC supports variable deletion only, without source_file.")
-            if source is not None and suffix != ".st" and not operations:
-                raise BridgeError("Deletion batch source repair requires an ST source or a deletion target FB.")
+            if suffix == ".fc" and source is None and not operations:
+                raise BridgeError("Offline FC requires a source_file or variable operations.")
+            if source is not None and suffix not in (".st", ".fc") and not operations:
+                raise BridgeError("Deletion batch source repair requires an ST/FC source or a deletion target FB.")
     else:
         for entry, source in entries:
             suffix = Path(entry["file"]).suffix.lower()
             if suffix == ".fbi" and (source is not None or not entry.get("variable_operations")):
                 raise BridgeError("Offline FBI mutations require variable_operations without source_file.")
-            if suffix == ".fc" and (source is not None or not entry.get("variable_operations")):
-                raise BridgeError("Offline FC additions require variable_operations without source_file.")
+            if suffix == ".fc" and source is None and not entry.get("variable_operations"):
+                raise BridgeError("Offline FC requires a source_file or variable operations.")
     definitions = {}
     # Only target records determine deletion eligibility; type users and other
     # native languages remain protected bytes for subsequent AutoShop compilation.

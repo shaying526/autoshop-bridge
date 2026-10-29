@@ -284,7 +284,7 @@ public static class BridgeAccessibility {
    return new Dictionary<string,object>{{"profile","native-tree-items-msaa-v1"},{"complete",true},{"node_count",nodes.Count},{"tree_count_before",before},{"tree_count_after",after},{"includes_collapsed_items",true},{"atomic_snapshot",false},{"nodes",nodes}};
   }
   if(action=="open" || action=="tree_context" || keyboardContext){
-   if((action=="tree_context" || keyboardContext) && program!="程序块" && program!="功能块" && program!="数据类型" && program!="全局变量表" && program!="功能块(FB)" && program!="结构体" && program!="软元件表" && program!="功能块实例")throw new Exception("Unsupported creation category");
+   if((action=="tree_context" || keyboardContext) && program!="程序块" && program!="功能块" && program!="数据类型" && program!="全局变量表" && program!="功能块(FB)" && program!="函数(FC)" && program!="结构体" && program!="软元件表" && program!="功能块实例")throw new Exception("Unsupported creation category");
    List<Node> found=new List<Node>();int count=0;TreeFind(root,program,found,0,ref count);
    if(found.Count!=1)throw new Exception("Expected one exact program tree node; found "+found.Count);
    if((int)found[0].Id<=0)throw new Exception("Unsupported tree item identity");

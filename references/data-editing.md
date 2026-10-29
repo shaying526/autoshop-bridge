@@ -37,7 +37,7 @@ CLI 1.03补充：[关闭工程离线开发](offline-editing.md)处理已登记ST
 
 s8明确删除走[声明删除](declaration-editing.md)的declarations-read/editor-declarations-delete或offline入口；不向本页旧编辑接口的清单添加delete。两模式不检查引用、不级联，完整性检查保留。窗口GVT读取已覆盖已观察的声明缓存/展开监视重叠布局，仍以实际窗口完整回读为准。
 
-用户明确需要新建LiteST FB或结构时，可先检查`object-plan --help`和`object-create --help`，优先由软件正常界面创建，再走已登记对象编辑。计划要求完整工程/PID、名称、初始source-file或members-file、新output；只有显式save-project才保存工程登记。先inspect/plan再用计划调用create，检查created/saved/registration/readback各阶段，失败可能已创建部分对象，不重放。严格镜像资格不满足时停止，不能拿正文registration-receipt绕过创建或类型检查。严格已识别空FBI首项/第二项可用下文instances-editor-add；新空白工程未知HCPP登记另待，不绕过资格检查。
+用户明确需要新建LiteST FB或结构时，可先检查`object-plan --help`和`object-create --help`，由软件正常界面创建，再走已登记对象编辑。计划要求完整工程/PID、名称、初始source-file或members-file、新output；只有显式save-project才保存工程登记。先plan再按计划create，失败可能已创建部分对象，不重放。s22未知HCPP可按[独立项目登记基线](project-registration.md)关闭捕获后显式给object-plan，object-create自动绑定plan内receipt；默认strict不变，旧正文registration-receipt不能授权创建。创建结果requires_project_registration_refresh时须正常关闭后直读HCP重捕；已执行save-project不循环保存或重建。捕获不自动关开、编译或操作PLC。
 
 整理方式：AI 根据现有表与变量适配整理  
 当前状态：限定操作；不把读到类型等同能写该类型  
@@ -47,7 +47,7 @@ s8明确删除走[声明删除](declaration-editing.md)的declarations-read/edit
 
 ## 方法一库与LD实例（s21限定验收）
 
-目标宿主仍为已登记LiteST FB，全局实例为已识别严格FBI；LD只是被引用的类型，不编辑其图形。先按[offline系列](offline-editing.md)关闭目标工程、export冻结基线，再对以下changes.json执行check/build/apply。`ExampleLadderFB`替换为直接HCP中的准确登记原名称；这些新格式目前仅s21开发源实现，当前已发布仍s20，先确认实际安装版本支持。
+目标宿主仍为已登记LiteST FB，全局实例为已识别严格FBI；LD只是被引用的类型，不编辑其图形。先按[offline系列](offline-editing.md)关闭目标工程、export冻结基线，再对以下changes.json执行check/build/apply。`ExampleLadderFB`替换为直接HCP中的准确登记原名称；s21已提供这些格式，先确认实际安装版本支持。
 
 ```json
 {"schema":1,"targets":[
@@ -66,7 +66,7 @@ VAR add可选`type_kind:"function_block"`是调用者明确选择原生256声明
 
 两类初值均显式null，生成空原生默认串，不复制/推算布局和地址；VAR原生类型文字大写，FBI保持请求原名称。`instance_type_choices`报告`registered_ld`或`explicit_request`，`library_existence_checked=false`且`compile_pending=true`。工程登记和可读文件哈希仍冻结，外部安装库不宣称已解析或冻结；库存在性、引用和语义交调用AI及AutoShop编译。正文和多文件修改由调用AI显式组织，备份、候选重建、完整回读及非目标保护保持。
 
-当前样本10条记录与3份整文件exact，正式单项/批量check/build/apply通过且仅目标变化；重开已独立分类3个新FBI flags 0→256、其他49源exact，完整读表和两次0错误编译均通过。不能把applied、候选或s20历史编译结果当作本轮编译通过，也不声称s21已发布。
+该s21样本10条记录与3份整文件exact，正式单项/批量check/build/apply通过且仅目标变化；重开独立分类3个新FBI flags 0→256、其他49源exact，完整读表、组合及恢复0错误编译通过。s21已发布，历史验收仍不能替代调用者本次工程编译。
 
 ## FB/FC内部变量
 
@@ -85,11 +85,11 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ```
 
 - FB：已有注释/BOOL/INT/DINT标量初值限定set；VAR/IN/OUT新增BOOL/INT/DINT，初值字符串。INOUT可新增这些标量；IN/OUT/INOUT可新增项目结构，内部VAR可新增项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。平面BOOL/INT/DINT结构支持全空、全非空及混合成员注释，详见下节。宿主须为已支持LiteST FB，不能用此入口直接修改LD宿主。
-- s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；方法二未登记单段库名及未知原生布局仍未实现。方法一库/LD的s21开发用法见上节，不向editor-variables清单加入type_kind。
+- s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；方法二未登记单段库名及未知原生布局仍未实现。方法一库/LD的s21用法见上节，不向editor-variables清单加入type_kind。
 - 内部VAR选择器未读取类型分类，未登记点限定名称先标`ide_resolved`，不预断为FB。保存后只接受原生64（结构）或256（FB），核对实际名称/类型文本、VAR类别和已知默认字段；结果`named_type_resolution`与备份`native_added_variables.json`记录实际类型及初值。未保存状态仍待原生回读，不能据此报告已确认FB类型。
 - 空表或仅有复杂声明的非空表，可在备份后创建并核对准确默认行，再延后类型选择器预检；有可用标量行时先预检。dry-run不创建行。失败可能留下已知未保存行，先回读现场，不盲目重放。
 - FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT的BOOL/INT/DINT新增initial_value必须null。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。复杂类型、返回类型、FCI和新建FC不开放。不要把FB示例字符串初值套给FC。
-- 文件export的variables.json只读；FB/FC离线编辑改走offline系列及其variable_operations，FC支持标量add或独立明确delete，新增不接受source_file，不混用add/delete，不重建正文行表。不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保持，保存前备份，保存后原生/窗口核对。新增INOUT后必须按真实需求修改所有调用实参，工具不会自动绑定。
+- 文件export的variables.json只读；FB/FC离线编辑改走offline系列，FC支持标量add或独立delete，不混用add/delete。s22另支持下节限定source_file正文路径，保留完整旧行表，不制造新LF表。不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保护保持，保存前备份，保存后原生/窗口核对。新增INOUT后的调用实参由AI按需求修改，工具不自动绑定。
 
 库/LD引用沿用上面的editor-variables命令及同一JSON格式。以下`ExampleLadderFB`为合成占位，必须替换为本次工程已登记LD功能块的准确名称；`TRIG.R_TRIG`也须在本机真实选择器中存在，不硬编码软件库清单。
 
@@ -101,6 +101,16 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ```
 
 上述新增不自动更新正文或绑定参数，调用AI显式组织正文，再交编译。s20已完成限定组合重开、完整回读及组合/恢复0错误编译，保存状态与编译结果仍分别报告。
+
+## FC文件正文（s22限定profile）
+
+使用原offline-export/check/build/apply/restore及`{"schema":1,"targets":[{"file":"CalcDemo.FC","source_file":"CalcDemo-candidate.st"}]}`，正文文件相对changes.json解析，为UTF-8无BOM。可仅修改正文，不需要把变量声明塞进正文或编辑只读快照。
+
+输入须是已识别完整FC，正文行数与行表记录数匹配，三个行字段均属全零profile。仅改正文长度和正文数据，完整保留旧行表、声明及其他边界；不按新LF数生成/补零/删减行记录。已验2→4行输出正文4/行表2，独立匹配4行输入删至1行输出1/4；两份候选与正常IDE整文件exact。
+
+输出可滞后，不能称行表已刷新或直接续用旧工作目录。正常IDE处理后重新读取/export，只有真实取得匹配基线才继续文件路径；不保证一次保存会归一化行表。输入原本滞后、compact/未知布局或非零行字段拒绝，`offline_unsupported_fc_row_metadata`含line、row_index、field、value、byte_offset、profile及reason（计数不匹配含expected）。不要清零或压成单行绕过；旧文件build/apply限制保持。
+
+同一既有empty02副本已完成正式FC声明、上述FC文件候选及空FBI两项组合，2026-10-29 21:03:55编译0错误；第三项追加与恢复/打包仍在进行，s22尚未发布。HCP被IDE锁住而需窗口声明编辑时，另按[项目登记基线](project-registration.md)显式绑定；offline文件写入仍先关闭工程并使用自己的直接HCP基线。
 
 ## 结构/GVT双模式
 
@@ -150,7 +160,7 @@ FBI哈希取当次读取；清单schema=1/operations，initial_value必须null�
 ]}
 ```
 
-`ExampleLadderFB`须替换为本次已登记LD类型；方法二库名也取真实选择器。s18文件模式项目LiteST FB新增见[offline系列](offline-editing.md#全局fbi项目fb实例s18)，方法一库/LD的s21开发格式见本页上节。方法二未登记单段库名、任意容器构造仍待。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile可两模式删空。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份、核对IDE默认首行，再预检选择器。失败可能留已知未保存行，先回读，不重放。新空白工程未知HCPP登记另待，不拿正文凭据绕过。
+`ExampleLadderFB`须替换为本次已登记LD类型；方法二库名也取真实选择器。s18文件模式项目LiteST FB新增见[offline系列](offline-editing.md#全局fbi项目fb实例s18)，方法一库/LD的s21格式见本页上节。方法二未登记单段库名、任意容器构造仍待。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile可两模式删空。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份、核对IDE默认首行，再预检选择器。失败可能留已知未保存行，先回读，不重放。未知HCPP的s22独立项目基线见[登记说明](project-registration.md)，不拿旧正文凭据绕过。
 
 FBI新增逐格操作读取新行完整11列，并核对全部声明名称、计数及唯一ID；保存前和保存后仍完整读取整表，不以局部页冒充完整回读。新增入口允许区分界面分配预览与原生地址，结果分开报告：
 

@@ -1,20 +1,22 @@
 # 关闭工程后的离线编辑
 
+s22限定原生验收完成：新增独立显式项目登记基线与FC限定离线正文路径。未知HCPP头尾不改，基线另见[调用与失效规则](project-registration.md)；FC写正文保留完整旧行表，不重建LF行表。本页为s22，本轮21:03:55组合0错误，第三项追加和恢复均完成；最终21:11:23及恢复21:16:23均0错误，14根原生exact、空表正式回读和干净关闭通过。
+
 方法一库/已登记LD实例新增已完成本轮限定验收：单项及批量正式offline写入、重开9声明/74实例及全文完整回读，2026-10-29 19:49:05编译0错误；恢复原6/71项后19:52:35再次0错误并完整回读、干净关闭。59份根原生源全部与本轮起点逐字节相同，生成物差量另记，未新增工程副本。本说明随s21完整包提供。
 
 s17补齐已登记LiteST FB内部VAR的项目FB实例新增，含空表首项和批量追加。使用下文原offline系列及完整保护，详见[内部实例专项](validation.md)。
 
-s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局、新空白工程未知HCPP资格另待。
+s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局另待；未知HCPP的默认strict不变，s22可显式使用独立项目登记基线，不靠镜像放权。
 
 整理方式：AI 根据实现与独立副本验证整理  
-当前状态：CLI 1.03实验扩展；独立副本加载、正文/表回读和编译通过，发布包另做完整性验证  
+当前状态：s22登记基线及FC限定路径、第三项追加、恢复和原生审计通过；原生验收、完整回归及完整包通过；安装/发布按本轮交付记录核对  
 最后更新：2026-10-29
 
-处理已创建并登记的ST、LiteST FB、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
+offline系列处理已创建并登记的ST、LiteST FB、ST型FC、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
 
 ## 命令与路径
 
-开发工作树新增FC标量声明编码（[本轮报告](validation.md)，12个类型/类别组合已加载/回读及编译0错误，已纳入s11）：目标必须是已登记并严格可解析的ST型FC，variable_operations仅add，支持BOOL/INT/DINT及VAR/IN/OUT/INOUT，initial_value必须null。示例：`{"file":"CalcDemo.FC","variable_operations":[{"op":"add","name":"inputValue","category":"IN","data_type":"INT","initial_value":null,"comment":"Input"}]}`。FC新增不能带source_file，不能与delete混用；不支持set、复杂类型或返回类型。独立三尾字段记录不含FB初值/保持字段，原记录及整个内层正文/行表保持原字节；已有正文行表滞后不靠新增变量改写。闭工程、直接HCP、全部基线/唯一备份和完整回读保护与其他offline目标相同。
+FC标量声明编码已纳入s11（[报告](validation.md)），目标为已登记并严格可解析的ST型FC；新增支持BOOL/INT/DINT及VAR/IN/OUT/INOUT，initial_value必须null。示例：`{"file":"CalcDemo.FC","variable_operations":[{"op":"add","name":"inputValue","category":"IN","data_type":"INT","initial_value":null,"comment":"Input"}]}`。add不与delete混用，不支持set、复杂类型或返回类型；s22可另带source_file，但必须满足下节独立正文profile。三尾字段声明记录不套FB初值/保持格式；未请求正文时完整原正文及行表保持，不靠新增变量修复旧滞后表。闭工程、直接HCP、全部基线/唯一备份和完整回读保护保持。
 
 以下变量均由本次任务提供，使用绝对路径。bridge指向autoshop_bridge_cli.py。可从其他工作目录调用。
 
@@ -31,6 +33,20 @@ python -B $bridge offline-restore --receipt-file $receipt --expect-receipt-sha25
 exported冻结直接HCP、所有现存登记文件和额外原生文件。没有独立文件的登记列入excluded_nonfile_registration；原本缺失的非原生配置列入declared_missing，必须保持不存在。两者不成为可写目标；缺失原生依赖拒绝。HCPP不签发离线写资格。export/check/build只读，不证明工程已关闭；apply/restore全程保持Windows独占只读HCP句柄。用户仍须关闭工程，独占句柄不能证明其他软件没有旧内存内容。
 
 checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
+
+## FC正文增删行（s22限定profile）
+
+使用原offline系列，不给旧build/apply加参数，不传profile开关。请求可仅改正文，也可与已支持标量新增或独立delete目标组织；add/delete仍不混用。正文是UTF-8无BOM，source_file相对changes.json解析：
+
+```json
+{"schema":1,"targets":[{"file":"CalcDemo.FC","source_file":"CalcDemo-candidate.st"}]}
+```
+
+输入必须为完整已识别FC，正文行数与行表记录数匹配，记录顺序及三个行字段均属于已观察全零profile。写入只替换正文长度和正文数据，完整保留旧行表和其他边界/声明字节；不按新LF数生成、补零或删减行记录。已观察2→4行输出为正文4/行表2，独立匹配4行输入删至1行输出1/4，两候选均与正常IDE整文件exact。
+
+输出可能滞后，这不是已刷新行表；不能在同一旧工作目录继续下一次写入。由正常IDE处理后重新读取和export，只有真实重新取得匹配基线才继续此文件路径，不保证一次保存便使行表匹配。原本已滞后、compact/未知布局及非零未知字段拒绝，`offline_unsupported_fc_row_metadata`报告line、row_index、field、value、byte_offset、profile、reason，计数不匹配时另有expected；不要清零、压成单行或手造新行表绕过。
+
+本轮该FC路径与未知HCPP显式项目基线的声明编辑、FB/结构创建及空FBI两项已组合编译0错误；第三项与恢复/打包尚未完成，不据此宣称任意FC行元数据均支持。
 
 ## 库与已登记LD实例（s21）
 
@@ -149,11 +165,11 @@ file为登记中准确的相对路径。source_file相对changes.json目录解�
 
 FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；全空、全非空和混合空/非空成员注释采用正常IDE已观察的默认串。仅有注释的成员输出键值，分隔符按原成员位置保留；末成员为空时可能保留尾随`, `，不trim或补空注释。V4.11.0.5 实际保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续明确报未实现。嵌套、数组、STRING新增profile仍待。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。既有全有/全无注释VAR的文件覆盖/重开已完成；混合注释的8条完整IDE记录与新候选逐字节相同，本批组合验收另记结果。
 
-开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文，FC删除不支持source_file，FC增删行仍未实现。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；限定FBI离线新增见s18段落，任意容器构造仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
+开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文；s22的FC删除也可带source_file，但须满足匹配全零输入/完整保留旧行表的独立profile。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；限定FBI离线新增见s18段落，任意容器构造仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
 
 GVT add精确字段为op/name/data_type/initial_value/comment。结构必须initial_value:null，新记录使用真实保存profile的未分配地址FFFFFFFF，交由IDE分配，不估算地址或复制旧地址。s16严格已识别空GVT也支持BOOL/INT/DINT和上述结构首项/后续追加，完整空容器前缀保持，未分配地址不复制。跨GVT/FBI及工程对象重名拒绝。同批修改结构再新增其引用暂不支持，分批刷新基线。结构表标量add/set复用原table逻辑，add没有category/initial_value。
 
-ST增删行支持原全零profile及s15已识别的词法折叠缓存profile（depth/header/expanded）。按相同逻辑行迁移原记录，删除行移除记录，新增/替换行用正常IDE已观察的中性记录；重建UTF8字节长度、LF+1计数及顺序索引，前缀保持。AutoShop加载/保存自行刷新词法缓存，不证明业务语法。未知值返回offline_unsupported_st_row_metadata，error_context有target、line（1起）、row_index、field、value、byte_offset、profile和reason；不清零未知字段或压成单行。滞后ST行表仍拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已刷新。FC增删行及LD写入不属于本入口；稳定旧build/apply限制保持。
+ST增删行支持原全零profile及s15已识别的词法折叠缓存profile（depth/header/expanded）。按相同逻辑行迁移原记录，删除行移除记录，新增/替换行用正常IDE已观察的中性记录；重建UTF8字节长度、LF+1计数及顺序索引，前缀保持。AutoShop加载/保存自行刷新词法缓存，不证明业务语法。未知值返回offline_unsupported_st_row_metadata，error_context有target、line（1起）、row_index、field、value、byte_offset、profile和reason；不清零未知字段或压成单行。滞后ST行表仍拒绝。FB沿真实IDE保存行为保留完整旧行元数据，更新正文长度和字节、重定位变量造成的嵌入边界，不伪称滞后行表已刷新。FC正文增删行另按本页s22独立profile保留完整旧行表，不能套ST迁移规则；LD写入不属于本入口，稳定旧build/apply限制保持。
 
 s15实际37→28行的MAIN候选已在独立副本check/build/apply、恢复全115哈希、重放、重开完整回读及编译0错误；增行至30、删至27及回到原28行候选也已正式离线写入/重开回读。原结构/FB不重写，正文/引用及多文件安排由调用者负责。见[专项报告](validation.md)。请求仍为`{"schema":1,"targets":[{"file":"MAIN.ST","source_file":"MAIN-candidate.st"}]}`，source_file是相对changes.json的路径，不更换命令或额外传profile；用户需从实际工程重新export取得本轮基线。
 

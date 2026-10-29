@@ -351,6 +351,16 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument("--save", action="store_true")
     cmd.add_argument("--close", dest="close_after", action="store_true")
     cmd.add_argument("--registration-receipt", type=Path)
+    cmd = commands.add_parser('project-registration-capture', help='Capture a closed direct-HCP project baseline; does not close or save')
+    cmd.add_argument('--project', required=True, type=Path)
+    cmd.add_argument('--pid', required=True, type=int)
+    cmd.add_argument('--output', required=True, type=Path)
+    for name in ('scan', 'project-summary', 'code-context', 'editor-read', 'editor-sync',
+                 'editor-variables', 'table-editor-read', 'table-editor-edit',
+                 'instances-editor-read', 'instances-editor-add', 'instances-editor-edit',
+                 'instances-editor-initial-read', 'object-plan'):
+        commands.choices[name].add_argument('--project-registration-baseline', type=Path,
+            help='Explicit closed-HCP project baseline, independently checked against the live tree')
     return root
 
 
@@ -386,6 +396,52 @@ def _offline_command(command, args):
 
 def main(argv=None) -> int:
     args = vars(parser().parse_args(argv))
+    value = args.pop('project_registration_baseline', None)
+    result = None
+    try:
+        if args['command'] == 'object-create':
+            from autoshop_bridge.storage import read_json
+            from autoshop_bridge.workflows.object_creation import validate_plan
+            plan = read_json(args['plan_file'])
+            validate_plan(plan)
+            value = plan['baseline'].get('project_registration_baseline')
+        if value is not None:
+            if args.get('registration_receipt') is not None:
+                raise BridgeError('Choose either a target-content receipt or a project registration baseline.')
+            from autoshop_bridge.windows.project_registration import ProjectRegistrationScope
+            from autoshop_bridge.projects.registration_baseline import load
+            receipt = load(value)
+            allowed = []
+            if args['command'] in ('editor-sync', 'editor-variables', 'table-editor-edit', 'instances-editor-add', 'instances-editor-edit'):
+                target = args.get('program') or args.get('table')
+                suffixes = ({'.st', '.fb', '.fc'} if args['command'] == 'editor-sync' else
+                            {'.fb', '.fc'} if args['command'] == 'editor-variables' else
+                            {'.stru', '.gvt'} if args['command'] == 'table-editor-edit' else {'.fbi'})
+                from autoshop_bridge.projects.inventory import member_path
+                allowed = ['/'.join(member_path(row['file'])) for row in receipt['registration_rows']
+                           if row['file'] and Path(row['file']).suffix.lower() in suffixes
+                           and (row['caption'] == target or Path(row['file']).stem == target)]
+                if len(allowed) != 1:
+                    raise BridgeError('Registration command requires one exact captured native target.')
+            provider = ProjectRegistrationScope(receipt, args.get('project'), args.get('pid'), allowed_targets=allowed)
+            with provider.entered():
+                code, result = _dispatch(args)
+                provider.accept_verified_result(result)
+        else:
+            code, result = _dispatch(args)
+        emit(result, sys.stderr if result['status'] == 'error' else None)
+        return code
+    except (BridgeError, OSError) as exc:
+        failure = dict(status='error', error=str(exc))
+        if getattr(exc, 'code', None):
+            failure.update(error_code=exc.code, error_context=dict(getattr(exc, 'context', {})))
+        if result is not None:
+            failure.update(operation_result=result, operation_may_have_completed=True)
+        emit(failure, sys.stderr)
+        return 1
+
+
+def _dispatch(args):
     command = args.pop("command")
     try:
         if command.startswith("structure-rename-"):
@@ -418,6 +474,9 @@ def main(argv=None) -> int:
         elif command == "instances-editor-initial-read":
             from autoshop_bridge.windows.instance_edit import read_initial
             result = read_initial(**args)
+        elif command == 'project-registration-capture':
+            from autoshop_bridge.windows.project_registration import capture_project_registration
+            result = capture_project_registration(**args)
         elif command == "registration-capture":
             from autoshop_bridge.windows.registration_observer import capture_registration
             result = capture_registration(**args)
@@ -437,9 +496,7 @@ def main(argv=None) -> int:
             failure["error_code"] = exc.code
             if getattr(exc, "context", None):
                 failure["error_context"] = dict(exc.context)
-        emit(failure, sys.stderr)
-        return 1
-    emit(result)
+        return 1, failure
     if result["status"] == "partial":
-        return 2
-    return 1 if result["status"] in {"blocked", "stopped"} else 0
+        return 2, result
+    return (1 if result["status"] in {"blocked", "stopped"} else 0), result

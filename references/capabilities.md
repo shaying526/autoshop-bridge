@@ -1,8 +1,10 @@
 # 能力和证据边界
 
+s22限定原生验收完成：独立[项目登记基线](project-registration.md)可在未知HCPP头尾保持原样时显式用于已列出的扫描、声明编辑和正常创建CLI，默认strict及旧正文凭据不变。FC离线正文仅接受匹配且已观察全零行字段的输入，写入保留完整旧行表，允许输出正文/行表数量不同；不造新LF表。empty02同一安全副本正式scan、FC声明、FB初始化、结构创建和空FBI两项已重开完整回读，2026-10-29 21:03:55组合0错误；第三项与恢复均完成，14根原生exact并干净关闭；本页随s22完整包提供。
+
 s20已实现方法二点限定库类型及已登记LD功能块引用：LiteST宿主VAR使用editor-variables，全局FBI使用instances-editor-add的FB专用真实选择器。准确根定义和可读文件哈希取代递归业务依赖证明；未登记点限定VAR先为`ide_resolved`，保存后依据原生64/256确认实际类型。空表及只有复杂声明的FB表支持备份后默认行和延后选择器预检。方法二未登记单段库名、直接修改LD宿主仍待。正常保存、重开完整回读、组合及恢复0错误编译已限定验收；1623项回归通过（1项主机权限跳过），不以历史结果代替本次调用验收。示例及执行细节见[变量与表](data-editing.md)。
 
-s21方法一库/已登记LD实例为开发待验：LiteST宿主VAR库add可用`type_kind:"function_block"`显式选原生256种类，FBI天然FB、不加此字段。直接HCP识别准确登记LD原名称，不解析图形；VAR原生类型文本大写，FBI原样，null请求/空默认初始化。库存在性及语义交编译，外部安装库不宣称被冻结。正常样本10记录exact/3整文件exact、正式单项/批量check/build/apply及非目标保持已过；重开独立分类3个新FBI flags 0→256、其他49源exact，完整读表和两次0错误编译均通过。本包为s21；历史验收不替代调用者本次工程验收。
+s21方法一库/已登记LD实例已限定验收：LiteST宿主VAR库add可用`type_kind:"function_block"`显式选原生256种类，FBI天然FB、不加此字段。直接HCP识别准确登记LD原名称，不解析图形；VAR原生类型文本大写，FBI原样，null请求/空默认初始化。库存在性及语义交编译，外部安装库不宣称被冻结。正常样本10记录exact/3整文件exact、正式单项/批量check/build/apply及非目标保持已过；重开独立分类3个新FBI flags 0→256、其他49源exact，完整读表和两次0错误编译均通过。当前发布为s21；历史验收不替代调用者本次工程验收。
 
 平面BOOL/INT/DINT结构的混合空/非空成员注释两模式及正规rename已实现同一默认模板，按原成员末项位置保留分隔符，末尾`, `不得trim；全空、全非空及`=`/`#`保持原行为。GVT仍用独立空初始化串。嵌套/值初始化等语法仍另待，不清空注释绕过。
 
@@ -14,7 +16,7 @@ s18补齐全局FBI的文件模式项目FB实例追加：严格已识别双表容
 
 s17支持已登记LiteST FB内部VAR项目FB实例的文件新增，含空表首项与批量追加：initial_value:null，正常IDE已观察的大写类型文本/空默认记录，不复制初始化或地址。带结构接口、内部项目FB、已有库成员的引用定义已在独立副本加载/回读及组合编译0错误；调用正文由AI显式修改。方法二兼容实际大写显示，详见[离线用法](offline-editing.md)、[验收](validation.md)。
 
-s16补齐严格空GVT：BOOL/INT/DINT首项及追加两模式可用；已有扁平结构首项/第二项文件模式用offline，编辑器用table-editor-edit。空表结构dry-run报告延后选择器预检且不创建行，真实执行先备份和默认行核对；仅结构表后续追加不再强制已有标量。未知空布局及新空白工程HCPP资格另待，见[变量与表](data-editing.md)、[验收](validation.md)。
+s16补齐严格空GVT：BOOL/INT/DINT首项及追加两模式可用；已有扁平结构首项/第二项文件模式用offline，编辑器用table-editor-edit。空表结构dry-run报告延后选择器预检且不创建行，真实执行先备份和默认行核对；仅结构表后续追加不再强制已有标量。未知空布局仍待；未知HCPP的显式项目基线见[登记说明](project-registration.md)，默认strict不变。
 
 s15支持offline系列的已识别ST非零词法折叠缓存及增删行，原全零profile保持；相同逻辑行保留字段，新行中性初始化，未知值返回具体行/字段/值。独立37→28候选、增删行与完整回读/编译证据见[验收](validation.md)及[离线用法](offline-editing.md)。不增加自动业务引用同步。
 
@@ -22,19 +24,19 @@ s14补齐严格空FBI编辑器首项/第二项、dry-run延后预检和两模式
 
 新增[结构成员正规改名](structure-renaming.md)：单项/批量名称及已解析ST FB关联初值成员键；不自动替换正文引用，允许调用者另改正文后编译。其余尚未实现字段与格式边界分别列明，不以旧白名单禁止正常工程编辑。
 
-s11新增FC标量声明：方法二空表首项/第二项正常保存、重开回读与编译0错误已验；方法一独立FC编码的12种BOOL/INT/DINT×VAR/IN/OUT/INOUT组合从空表写入、加载/完整回读和编译0错误已验。初值仅null，旧记录/完整正文行表保持，闭工程独占/基线/备份/恢复保护保留。首次注释单元格曾超时并留下已知未保存行，经核对后受控继续；另从全新空表正式命令连续成功。不得把一次成功当桌面时序保证。FC复杂类型、返回类型、FCI和离线正文增删行仍未实现。
+s11新增FC标量声明：方法二空表首项/第二项正常保存、重开回读与编译0错误已验；方法一独立FC编码的12种BOOL/INT/DINT×VAR/IN/OUT/INOUT组合从空表写入、加载/完整回读和编译0错误已验。初值仅null，旧记录/完整正文行表保持，闭工程独占/基线/备份/恢复保护保留。首次注释单元格曾超时并留下已知未保存行，经核对后受控继续；另从全新空表正式命令连续成功。不得把一次成功当桌面时序保证。FC复杂类型、返回类型及FCI仍未实现；s22限定离线正文另按匹配全零输入/保留旧表规则处理。
 
 s10仅修复既有正文凭据路径：关闭捕获的直接HCP、当前进程/对象树、全部冻结文件及干净目标正文联合校验；HCP不可读时旧镜像差异仅作提示，不替换依赖集合。返回current_hcp_verified=false及有界registration_hint差异，不能显示为实时HCP已读取。独立副本真实捕获→同进程打开→读取→注释保存→完整回读通过；保存后旧凭据仍拒绝。其他类型目录/创建/离线资格不变，详见[凭据说明](offline-editing.md)。
 
-s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及FBI。FB/FC/GVT/FBI可在已观察严格profile删空，STRU保留至少一成员；空FBI编辑器首项/第二项已实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。嵌套/数组及FC离线增删正文行仍另待；混合结构成员注释在s20扩展，空GVT首项已在s16补齐。新CLI不增加service.__all__入口。
+s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及FBI。FB/FC/GVT/FBI可在已观察严格profile删空，STRU保留至少一成员；空FBI编辑器首项/第二项已实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。嵌套/数组及未知行字段仍另待；s22的FC正文另有独立保留旧行表profile；混合结构成员注释在s20扩展，空GVT首项已在s16补齐。新CLI不增加service.__all__入口。
 
 整理方式：AI 根据后台1.03代码、公共接口及既有验收报告整理  
-当前状态：s21方法一库/LD限定真实验收通过；完整包提供  
+当前状态：s22登记基线/FC限定组合、第三项追加、恢复与原生审计已验，原生验收、完整回归及完整包通过；安装/发布按本轮交付记录核对  
 最后更新：2026-10-29
 
 所有公共能力仍由原CLI或`autoshop_bridge.service.__all__`提供，没有新增MCP/业务API。CLI的`命令 --help`是参数事实来源；下表是可用范围，不表示每种类型组合都在AutoShop实测。
 
-s9已观察V4.11.0.5正常界面保存：扁平结构成员注释中的ASCII `=`和`#`原样进入FB结构初始化串，独立副本INOUT端口及GVT结构变量分别完整回读、编译0错误。`(),:`等未验语法及其他未知ST行字段限制保留；s15已单独补齐可识别非零折叠缓存；详见[离线编辑](offline-editing.md)。HCP占用、严格类型目录和可能过时镜像未因此解决。
+s9已观察V4.11.0.5正常界面保存：扁平结构成员注释中的ASCII `=`和`#`原样进入FB结构初始化串，独立副本INOUT端口及GVT结构变量分别完整回读、编译0错误。`(),:`等未验语法及其他未知ST行字段限制保留；s15已单独补齐可识别非零折叠缓存；详见[离线编辑](offline-editing.md)。s9未解决HCP占用或镜像实时性；s22另有独立项目基线，不扩旧正文凭据。
 
 s6另有[梯形图独立只读脚本](ladder-reading.md)，不属于上述公共service或默认scan；其输出保留experimental标记，不把接口已提供等同完整逻辑语义已验证。
 
@@ -46,6 +48,8 @@ s6另有[梯形图独立只读脚本](ladder-reading.md)，不属于上述公共
 | 检索：code-context、code-query | 符号、关系、limit/offset；定义/引用/调用/直接影响候选 | 磁盘只读；coverage=partial，词法候选非确定调用图 | 已实现，样本与自动检查；传递影响/完整作用域未实现 |
 | 正文：export、source-read/patch/restore | 原生ST/FB/FC→工作目录source.st；唯一原文补丁/哈希→差异、片段、备份 | 导出/补丁写外部工件；variables.json只读 | 已实现；限定正文及增删行有原后台用户编译证据 |
 | 文件直改模式：check/build/apply、backup/restore | 工作目录/原生基线；候选、替换结果、唯一备份 | apply/restore写原生；覆盖前校验和备份；非工程事务 | 已实现；ST/FB/FC正文同LF及限定表操作有历史验收，未知元数据不生成 |
+| FC离线正文：offline系列 | 登记FC、source_file及整工程基线；保留旧行表的完整候选 | s22仅匹配/全零行字段输入，输出可滞后，之后须正常IDE重新取得匹配基线 | 2→4输出4/2、4→1输出1/4两整文件候选与IDE exact；最终组合及恢复均0错误，原14份根原生exact |
+| 项目登记：project-registration-capture及显式baseline参数 | 闭工程直接HCP、PID、外部新output；实时树/全部文件证明 | 捕获不关开；原正文凭据不扩权；保存后旧基线失效，创建后须刷新持久登记 | s22未知头尾保持，正式扫描/声明/FB初始化/结构创建/空FBI2项限定通过，详见[登记说明](project-registration.md) |
 | 正文编辑器：editor-open/read/sync/save/close | 工程、准确程序名、可选PID、工作目录/快照；缓冲/保存/回读状态 | Windows/已打开工程；可自动打开标签，sync默认不保存 | 已实现；ST/FB/FC正文限定场景保存及人工编译已验，其他版本/桌面未验 |
 | FB/FC变量：editor-variables | schema=1操作清单、原生哈希；整表和保存结果 | 改缓冲，显式保存；复杂类型/依赖和整表保护 | 已实现限定范围，见[变量操作](data-editing.md)；并非所有组合现场验收 |
 | 结构/GVT：table-export/check/build/apply、table-editor-read/edit/close | 独立table工作目录/changes.json；成员/声明、候选、备份、保存结果 | 文件及编辑器两模式；GVT新增核对全部同目录GVT | 限定字段及BOOL/INT/DINT普通新增两模式历史编译通过；DINT既有初值修改/极值只有自动测试 |
@@ -54,7 +58,7 @@ s6另有[梯形图独立只读脚本](ladder-reading.md)，不属于上述公共
 | 系统定义：system-variables-read | 工程+用户本机安装definitions-dir；表/类型/search有界结果及来源哈希 | 只读厂商XML，随包不带XML，不是PLC实时值 | 已实现；单型号、部分表与窗口核对，其余型号/地址单位未验；SVT不是空GVT |
 | 编译反馈：build-baseline/report | 本轮基线与用户取得的真实日志；reported_pass/fail/未解析诊断 | 仅写报告；compile_freshness=unverified | 已实现文本解析，真实故意错误/修复有历史人工反馈；自动编译、面板读取未实现 |
 | 多对象：change-check/run | source/table步骤及依赖计划；逐步日志、失败及未执行清单 | 同一组同一种模式；editor步骤保存；无原子性/自动回滚 | 已实现；两步历史保存/编译通过，中断恢复仅自动检查；变量新增不在组内 |
-| 新建：object-dialog/create-st；实验object-plan/create | ST从已观察对话框起步；实验计划指定litest-fb/structure、名称、初始正文/成员及完整基线 | AutoShop生成容器/登记，显式save-project才保存工程登记；不覆盖同名，失败可能已创建，不盲重试 | LiteST FB及标量结构已在独立测试场景保存、重开、用户编译验收；不属稳定service；未知HCPP仍可能阻止创建，正文凭据不授权创建；新FC、新空白工程未知HCPP严格登记未完成 |
+| 新建：object-dialog/create-st；实验object-plan/create | ST从已观察对话框起步；实验计划指定litest-fb/structure、名称、初始正文/成员及完整基线 | AutoShop生成容器/登记，显式save-project才保存工程登记；不覆盖同名，失败可能已创建，不盲重试 | s22 object-plan/create可显式绑定独立项目基线，FB初始化/结构完整创建已限定验证；默认strict与旧正文凭据不扩权，pending需关闭直读HCP重捕；新FC/任意新容器另待 |
 
 原后台现场基准：Windows10、AutoShop V4.11.0.5、Python3.9.1；308项回归是V1.02历史自动结果。Python3.12仅更早阶段离线检查，不是当前新增能力或真实IDE已验。分发包的实际本轮结果见[验收说明](validation.md)，不能继承为本包已做真实编译。
 

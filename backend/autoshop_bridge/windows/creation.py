@@ -66,6 +66,31 @@ def mirror_state(project):
     hcp = select_project(project)
     mirror = regular_file(hcp.with_suffix(".hcpp"))
     raw = bounded_read(mirror)
+    from autoshop_bridge.projects.registration_baseline import registration_for
+    qualified = registration_for(hcp)
+    if qualified is not None:
+        from autoshop_bridge.projects.inventory import unpack_mirror_evidence
+        members, diagnostic = unpack_mirror_evidence(raw)
+        saved_hcp, source = qualified
+        root = registration(saved_hcp)
+        matched, native = {}, {}
+        for node in root.findall('file'):
+            name = node.findtext('FileName') or ''
+            if not name:
+                continue
+            path = project.joinpath(*member_path(name))
+            if path.exists():
+                path = regular_file(path)
+                if project not in path.parents:
+                    raise BridgeError('Registered path leaves the selected project.')
+                matched[name] = sha256(bounded_read(path))
+        for path in project.iterdir():
+            if path.suffix.lower() in NATIVE_SUFFIXES:
+                native[path.name] = sha256(bounded_read(native_file(path)))
+        native.update({name: value for name, value in matched.items() if Path(name).suffix.lower() in NATIVE_SUFFIXES})
+        return dict(hcp=hcp, mirror=mirror, raw=raw, saved_hcp=saved_hcp,
+                    matched=matched, native=native, direct_hcp_verified=False,
+                    root=root, registration_source=source, mirror_diagnostic=diagnostic)
     members = unpack_mirror(raw)
     keys = [name for name in members if name.casefold() == hcp.name.casefold()]
     if len(keys) != 1:

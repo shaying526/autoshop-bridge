@@ -1,4 +1,4 @@
-"""Isolated, experimental ST/FB candidate generation; never writes files.
+"""Isolated, experimental ST/FB/FC candidate generation; never writes files.
 
 Evidence: historical native insertion/deletion snapshots. Replacing the body
 and rebuilding the all-zero row profile reproduces both IDE-saved ST samples.
@@ -10,17 +10,21 @@ The corresponding FB snapshot pair is exactly reproduced by changing
 only its body length and encoded body, retaining the entire old row table.
 The FB profile follows that evidence even when body/table counts differ. It
 never interprets or regenerates row metadata, or changes the stable writer.
+
+FC uses its independent 512 envelope and EOF boundary. Only observed matching
+all-zero input row tables qualify; their complete bytes are preserved on edits.
 """
 
 import struct
 from difflib import SequenceMatcher
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
-from autoshop_bridge.formats import fb, st
+from autoshop_bridge.formats import fb, fc, st
 
 ST_ZERO_ROWS_V1 = "autoshop-st-zero-row-fields-v1-experimental"
 FB_PRESERVE_ROWS_V1 = "autoshop-fb-preserve-row-metadata-v1-experimental"
 ST_FOLD_ROWS_V1 = "autoshop-st-relocated-fold-row-cache-v1-experimental"
+FC_ZERO_ROWS_V1 = "autoshop-fc-matched-zero-preserved-rows-v1-experimental"
 
 
 def _row_rejection(index, field, value, offset, reason, profile):
@@ -123,6 +127,60 @@ def rebuild_zero_row_st(raw: bytes, source: bytes, *, profile: str) -> bytes:
         or candidate[: verified.length_offset] != raw[: original.length_offset]
     ):
         raise BridgeError("Offline ST candidate failed structural verification.")
+    return candidate
+
+
+def rebuild_zero_row_fc(raw: bytes, source: bytes, *, profile: str) -> bytes:
+    """Replace an FC body while preserving its qualified row table verbatim.
+
+    FC has its own 512 declaration envelope and ends at the embedded object's
+    row table, without FB's outer trailer. Normal saved FC samples contain
+    sequential indices and three zero DWORDs in matched input snapshots. Normal
+    IDE insertion retains the old row count/records. Compact/lagging inputs and
+    nonzero fields are not interpreted or cleared. The output may be lagging;
+    another edit then needs normal IDE save and a fresh matched input baseline.
+    This pure candidate needs independent normal IDE reload/save acceptance.
+    """
+    if profile != FC_ZERO_ROWS_V1:
+        raise BridgeError("Unknown offline FC row profile.")
+    st.validate_program_edit(source)
+    original = fc.parse(raw)
+    table_offset = original.payload_offset + original.payload_length
+
+    def reject(index, field, value, byte_offset, reason, **detail):
+        raise FormatRejection(
+            "Unsupported FC row metadata at line {}: {}={} ({}).".format(index + 1, field, value, reason),
+            code="offline_unsupported_fc_row_metadata",
+            context=dict(profile=profile, line=index + 1, row_index=index, field=field,
+                         value=value, byte_offset=byte_offset, reason=reason, **detail),
+        )
+
+    if not original.line_metadata_matches_source:
+        reject(min(original.line_table_count, original.line_count), "line_table_count",
+               original.line_table_count, table_offset + 4,
+               "source and FC row-table counts differ", expected=original.line_count)
+    for index in range(original.line_table_count):
+        for number, value in enumerate(struct.unpack_from("<III", raw, table_offset + 12 + index * 16), 1):
+            if value:
+                reject(index, "row_field_" + str(number), value,
+                       table_offset + 8 + index * 16 + number * 4,
+                       "nonzero field outside observed FC zero-row profile")
+    if source == original.source:
+        return raw
+    candidate = (raw[:original.length_offset] + struct.pack("<I", len(source)) + st.encode(source)
+                 + raw[table_offset:])
+    if len(candidate) > st.MAX_NATIVE_SIZE:
+        raise BridgeError("Offline FC candidate exceeds the supported size limit.")
+    verified = fc.parse(candidate)
+    new_table_offset = verified.payload_offset + verified.payload_length
+    if (verified.source != source or verified.line_table_count != original.line_table_count
+            or verified.inner_offset != original.inner_offset
+            or verified.payload_offset != original.payload_offset
+            or verified.variable_document() != original.variable_document()
+            or candidate[:verified.length_offset] != raw[:original.length_offset]
+            or candidate[new_table_offset:] != raw[table_offset:]
+            or new_table_offset + 8 + original.line_table_count * 16 != len(candidate)):
+        raise BridgeError("Offline FC zero-row candidate failed envelope/metadata verification.")
     return candidate
 
 

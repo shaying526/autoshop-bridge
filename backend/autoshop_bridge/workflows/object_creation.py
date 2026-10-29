@@ -71,8 +71,16 @@ def validate_plan(plan):
 def _clean(snapshot):
     required = {'project', 'identity', 'native_hashes', 'registration_sha256', 'object_names',
                 'dirty_documents', 'dialogs', 'cell_edits'}
-    if not isinstance(snapshot, dict) or set(snapshot) != required:
+    extended = required | {'project_registration_baseline', 'mirror_sha256'}
+    if not isinstance(snapshot, dict) or set(snapshot) not in (required, extended):
         raise BridgeError('Incomplete object-creation baseline.')
+    if 'project_registration_baseline' in snapshot:
+        from autoshop_bridge.projects.registration_baseline import load
+        receipt = load(snapshot['project_registration_baseline'])
+        if receipt['project_file'] != str(Path(snapshot['project']) / Path(receipt['project_file']).name):
+            raise BridgeError('Creation plan project registration baseline belongs to a different project.')
+        if receipt['closed_identity'] != snapshot['identity']:
+            raise BridgeError('Creation plan registration process identity differs.')
     if any(snapshot[k] for k in ('dirty_documents', 'dialogs', 'cell_edits')):
         raise BridgeError('Creation requires a clean project with no dialogs or active cell edits.')
     if not isinstance(snapshot['native_hashes'], dict) or not isinstance(snapshot['object_names'], list):
@@ -169,6 +177,11 @@ class ObjectCreationWorkflow:
                           kind=plan['kind'], requested_name=plan['name'], object=observed,
                           backup=backup, compile_outcome='not_run', requires_user_compile=True,
                           requires_user_project_save=not registered, project_atomic=False)
+            source = observed.get('registration_source') or {}
+            if not registered and source.get('kind') == 'closed_hcp_live_tree_verified':
+                result.update(requires_user_project_save=not plan['save_project'],
+                              requires_project_registration_refresh=True,
+                              registration_verification='close_and_capture_direct_hcp; do_not_repeat_creation_or_save')
             self.backend.record(backup, dict(stage='completed', result=result))
             return result
         except Exception as exc:

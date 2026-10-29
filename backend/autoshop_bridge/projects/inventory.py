@@ -248,8 +248,10 @@ def scan(project, *, allow_readonly_tail=False):
     hcp = select_project(project)
     directory = hcp.parent
     source = {"path": str(hcp), "kind": "hcp", "possibly_stale": False}
+    from autoshop_bridge.projects.registration_baseline import registration_for
+    qualified = registration_for(hcp)
     try:
-        raw = _read_hcp(hcp)
+        raw = _read_hcp(hcp) if qualified is None else qualified[0]
     except PermissionError as exc:
         mirror = hcp.with_suffix(".hcpp")
         winerror = getattr(exc, "winerror", None)
@@ -285,6 +287,8 @@ def scan(project, *, allow_readonly_tail=False):
         }
     else:
         root = registration(raw)
+        if qualified is not None:
+            source = dict(qualified[1])
     source["sha256"] = sha256(raw)
     files, seen = [], set()
     for node in root.findall("file"):
