@@ -5,7 +5,7 @@ from itertools import groupby
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import empty_table, fb, instances, tables
-from autoshop_bridge.formats.offline_variables import _text
+from autoshop_bridge.formats.offline_variables import _text, instance_definition
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
@@ -36,9 +36,9 @@ def _layout(raw):
 
 
 def _append(raw, operations, definitions=None):
-    """Append default project-FB records, preserving every old/opaque byte.
+    """Append default FB records, preserving every old/opaque byte.
 
-    Definitions are exact registered LiteST FB bytes, frozen by the caller.
+    Definitions are registered LiteST bytes or explicit LD/library descriptors.
     Empty initialization is independent of the referenced interface or body;
     the IDE/compiler owns all allocation and business/reference validation.
     """
@@ -71,9 +71,7 @@ def _append(raw, operations, definitions=None):
         try:
             if op["data_type"] not in definitions:
                 raise BridgeError("Expected an exact registered project FB definition.")
-            definition = fb.parse(definitions[op["data_type"]])
-            if definition.program_name != op["data_type"]:
-                raise BridgeError("Project FB definition identity differs.")
+            instance_definition(op["data_type"], definitions[op["data_type"]])
         except BridgeError as exc:
             raise FormatRejection(str(exc), code="offline_unsupported_fb_instance",
                                   context=dict(context, field="data_type")) from exc

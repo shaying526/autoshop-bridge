@@ -1,6 +1,8 @@
 # 能力和证据边界
 
-s20已实现方法二点限定库类型及已登记LD功能块引用：LiteST宿主VAR使用editor-variables，全局FBI使用instances-editor-add的FB专用真实选择器。准确根定义和可读文件哈希取代递归业务依赖证明；未登记点限定VAR先为`ide_resolved`，保存后依据原生64/256确认实际类型。空表及只有复杂声明的FB表支持备份后默认行和延后选择器预检。未登记单段库名、直接修改LD宿主、方法一库/LD实例构造仍待。正常保存、重开完整回读、组合及恢复0错误编译已限定验收；1623项回归通过（1项主机权限跳过），不以历史结果代替本次调用验收。示例及执行细节见[变量与表](data-editing.md)。
+s20已实现方法二点限定库类型及已登记LD功能块引用：LiteST宿主VAR使用editor-variables，全局FBI使用instances-editor-add的FB专用真实选择器。准确根定义和可读文件哈希取代递归业务依赖证明；未登记点限定VAR先为`ide_resolved`，保存后依据原生64/256确认实际类型。空表及只有复杂声明的FB表支持备份后默认行和延后选择器预检。方法二未登记单段库名、直接修改LD宿主仍待。正常保存、重开完整回读、组合及恢复0错误编译已限定验收；1623项回归通过（1项主机权限跳过），不以历史结果代替本次调用验收。示例及执行细节见[变量与表](data-editing.md)。
+
+s21方法一库/已登记LD实例为开发待验：LiteST宿主VAR库add可用`type_kind:"function_block"`显式选原生256种类，FBI天然FB、不加此字段。直接HCP识别准确登记LD原名称，不解析图形；VAR原生类型文本大写，FBI原样，null请求/空默认初始化。库存在性及语义交编译，外部安装库不宣称被冻结。正常样本10记录exact/3整文件exact、正式单项/批量check/build/apply及非目标保持已过；重开独立分类3个新FBI flags 0→256、其他49源exact，完整读表和两次0错误编译均通过。本包为s21；历史验收不替代调用者本次工程验收。
 
 平面BOOL/INT/DINT结构的混合空/非空成员注释两模式及正规rename已实现同一默认模板，按原成员末项位置保留分隔符，末尾`, `不得trim；全空、全非空及`=`/`#`保持原行为。GVT仍用独立空初始化串。嵌套/值初始化等语法仍另待，不清空注释绕过。
 
@@ -27,8 +29,8 @@ s10仅修复既有正文凭据路径：关闭捕获的直接HCP、当前进程/�
 s10 / CLI 1.03保留[关闭工程离线开发](offline-editing.md)：offline-export/check/build/apply/restore仅编辑已登记对象，独占HCP、全部备份、候选重建及完整回读。更新FB内部VAR结构和方法二GVT结构新增；加入[明确声明删除](declaration-editing.md)，两模式支持ST/LiteST FB、FC、结构、GVT及FBI。FB/FC/GVT/FBI可在已观察严格profile删空，STRU保留至少一成员；空FBI编辑器首项/第二项已实现。删除不查引用、不级联，语义交编译；完整性保护保留。registration-receipt仍只验证目标正文，不能用来授权类型或创建。嵌套/数组及FC离线增删正文行仍另待；混合结构成员注释在s20扩展，空GVT首项已在s16补齐。新CLI不增加service.__all__入口。
 
 整理方式：AI 根据后台1.03代码、公共接口及既有验收报告整理  
-当前状态：s20限定真实联合验收及1623项回归通过；完整安装包完整性另验  
-最后更新：2026-10-28
+当前状态：s21方法一库/LD限定真实验收通过；完整包提供  
+最后更新：2026-10-29
 
 所有公共能力仍由原CLI或`autoshop_bridge.service.__all__`提供，没有新增MCP/业务API。CLI的`命令 --help`是参数事实来源；下表是可用范围，不表示每种类型组合都在AutoShop实测。
 
@@ -47,7 +49,7 @@ s6另有[梯形图独立只读脚本](ladder-reading.md)，不属于上述公共
 | 正文编辑器：editor-open/read/sync/save/close | 工程、准确程序名、可选PID、工作目录/快照；缓冲/保存/回读状态 | Windows/已打开工程；可自动打开标签，sync默认不保存 | 已实现；ST/FB/FC正文限定场景保存及人工编译已验，其他版本/桌面未验 |
 | FB/FC变量：editor-variables | schema=1操作清单、原生哈希；整表和保存结果 | 改缓冲，显式保存；复杂类型/依赖和整表保护 | 已实现限定范围，见[变量操作](data-editing.md)；并非所有组合现场验收 |
 | 结构/GVT：table-export/check/build/apply、table-editor-read/edit/close | 独立table工作目录/changes.json；成员/声明、候选、备份、保存结果 | 文件及编辑器两模式；GVT新增核对全部同目录GVT | 限定字段及BOOL/INT/DINT普通新增两模式历史编译通过；DINT既有初值修改/极值只有自动测试 |
-| 全局FB实例：instances-editor-read/add、offline系列 | 准确表名、清单、FBI哈希；完整表、备份、分配预览与实际地址更新清单 | 方法二支持非空/严格空表的项目LiteST/已识别LD及点限定库FB，FBI专用选择器；保存不等于编译 | 首项/第二项有历史验收；s20库/LD新增及地址差量已正常保存回读，本批统一编译/恢复0错误已验；方法一仍限s18项目LiteST FB，任意容器构造未实现 |
+| 全局FB实例：instances-editor-read/add、offline系列 | 准确表名、清单、FBI哈希；完整表、备份、分配预览与实际地址更新清单 | 方法二非空/严格空表使用FB专用选择器；方法一s21扩展已登记LD/点限定库FB，天然256且无type_kind；保存不等于编译 | s20方法二库/LD已有联合验收；s21方法一正常样本及单项/批量磁盘流程通过，完整读表和组合/恢复0错误编译通过，本包提供；任意容器构造未实现 |
 | 明确删除：declarations-read、editor-declarations-delete、offline系列 | 准确对象/模式、文件及记录哈希、delete清单；候选/缓冲/保存/回读分阶段状态 | 不检查引用、不级联；完整身份/备份/基线/非目标保护，未知布局拒绝 | 两模式、FB/FC/GVT/FBI严格profile删空已在V4.11.0.5独立副本验证；STRU末项菜单禁用 |
 | 系统定义：system-variables-read | 工程+用户本机安装definitions-dir；表/类型/search有界结果及来源哈希 | 只读厂商XML，随包不带XML，不是PLC实时值 | 已实现；单型号、部分表与窗口核对，其余型号/地址单位未验；SVT不是空GVT |
 | 编译反馈：build-baseline/report | 本轮基线与用户取得的真实日志；reported_pass/fail/未解析诊断 | 仅写报告；compile_freshness=unverified | 已实现文本解析，真实故意错误/修复有历史人工反馈；自动编译、面板读取未实现 |

@@ -21,7 +21,7 @@ from autoshop_bridge.formats import fb, fc, st, tables, instances, declaration_d
 from autoshop_bridge.formats.offline_source import (
     ST_FOLD_ROWS_V1, FB_PRESERVE_ROWS_V1, rebuild_fold_row_st, rebuild_preserved_row_fb,
 )
-from autoshop_bridge.formats.offline_variables import rebuild_fb
+from autoshop_bridge.formats.offline_variables import rebuild_fb, FBInstanceType
 from autoshop_bridge.projects import inventory, deletion_preflight
 from autoshop_bridge.projects.offline_guard import exclusive_hcp, OfflineProjectUnavailable, error_code
 from autoshop_bridge.projects.identifiers import precheck_addition_names, require_new_identifier
@@ -284,10 +284,42 @@ def check(workspace, changes_file, *, candidate_builder=None):
     result = dict(status="checked", targets=[entry["file"] for entry, _ in entries],
                 protected_files=len(manifest["hashes"]), candidate_built=False,
                 qualification="format_type_source_and_namespace_checked")
+    choices = _instance_type_choices(manifest, entries)
+    if choices:
+        result.update(instance_type_choices=choices, compile_pending=True,
+                      reference_check="not_performed_by_design")
     if _has_deletions(entries):
         result["deletion_preflight_scope"] = deletion_preflight.SCOPE
         result["qualification"] = "explicit_declaration_targets_checked_compile_pending"
         result.update(reference_check="not_performed_by_design", compile_pending=True, cascade=False)
+    return result
+
+
+def _instance_type_choices(manifest, entries):
+    """Describe new record-kind choices without claiming library existence."""
+    result = []
+    for entry, _ in entries:
+        suffix = Path(entry["file"]).suffix.lower()
+        if suffix not in (".fb", ".fbi"):
+            continue
+        for op in entry.get("variable_operations", []):
+            if not isinstance(op, dict) or op.get("op") != "add":
+                continue
+            dtype = op.get("data_type", "")
+            matches = [(name, row) for name, row in manifest["registered"].items()
+                       if row["state"] == "present" and Path(name).suffix.lower() == ".fb"
+                       and Path(name).stem == dtype]
+            source = None
+            if matches:
+                name, row = matches[0]
+                if inventory.program_language(".fb", row["file_type_raw"], row["program_type_raw"])[0] == "LD":
+                    source = "registered_ld"
+            elif "." in dtype and (suffix == ".fbi" or op.get("type_kind") == "function_block"):
+                source = "explicit_request"
+            if source:
+                result.append(dict(target=entry["file"], name=op["name"], data_type=dtype,
+                                   type_kind="function_block", type_identity_source=source,
+                                   library_existence_checked=False))
     return result
 
 
@@ -380,6 +412,16 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
                    if row["state"] == "present" and Path(name).suffix.lower() == ".fb"
                    and Path(name).stem.casefold() == dtype.casefold()]
         if not matches:
+            requested_as_fb = any(
+                isinstance(op, dict) and op.get("op") == "add" and op.get("data_type") == dtype
+                and (Path(entry["file"]).suffix.lower() == ".fbi" or op.get("type_kind") == "function_block")
+                for entry, _ in entries for op in entry.get("variable_operations", []))
+            # A qualified library identifier does not reveal whether it is a
+            # structure or FB. Explicit VAR kind / the FBI target selects the
+            # already observed FB record format; existence is compiled later.
+            if (requested_as_fb and dtype not in definitions and len(dtype.split(".")) > 1
+                    and all(part.isidentifier() for part in dtype.split("."))):
+                definitions[dtype] = FBInstanceType(dtype, "explicit_request")
             continue  # Scalars/structures or an unsupported name, checked by encoder.
         context = dict(data_type=dtype, definition_files=[name for name, _ in matches])
         if len(matches) != 1 or Path(matches[0][0]).stem != dtype or any(
@@ -390,7 +432,8 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
         language, _ = inventory.program_language(".fb", row["file_type_raw"], row["program_type_raw"])
         try:
             if language == "LD":
-                raise BridgeError("LD FB instance construction has not been validated.")
+                definitions[dtype] = FBInstanceType(dtype, "registered_ld")
+                continue
             definition = fb.parse(blobs[name])
             if definition.program_name != dtype:
                 raise BridgeError("Registered filename and native FB type identity differ.")
@@ -521,6 +564,10 @@ def build(workspace, changes_file, *, candidate_builder=None):
     result = dict(status="built", plan=str(directory / "plan.json"), targets=targets,
                 plan_sha256=storage.sha256((directory / "plan.json").read_bytes()),
                 validation="candidate_only_reload_save_compile_pending")
+    choices = _instance_type_choices(manifest, entries)
+    if choices:
+        result.update(instance_type_choices=choices, compile_pending=True,
+                      reference_check="not_performed_by_design")
     if _has_deletions(entries):
         result["deletion_preflight_scope"] = deletion_preflight.SCOPE
         result.update(reference_check="not_performed_by_design", compile_pending=True, cascade=False)

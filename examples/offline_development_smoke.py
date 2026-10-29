@@ -38,6 +38,7 @@ def fixtures(project):
         + struct.pack("<II", 256, 0) + b"\0" * 4 + native(b"// initial") + b"\0" * 4)
     (project / "TimerBlock.FB").write_bytes(b"AutoShop" + b"\0" * 51 + string("TimerBlock")
         + struct.pack("<II", 256, 0) + b"\0" * 4 + native(b"// synthetic timer") + b"\0" * 4)
+    (project / "LadderBlock.FB").write_bytes(b"AutoShop-synthetic-opaque-LD-do-not-parse")
     (project / "MAIN.ST").write_bytes(native(b"// initial"))
     for name in ("InputData", "OutputData"):
         rows = b"".join(string("") + struct.pack("<I", code) + string(member) + string(comment)
@@ -66,9 +67,11 @@ def fixtures(project):
     (project / "Instances.fbi").write_bytes(empty[:offset] + struct.pack("<I", 2)
         + instance_records + empty[end:])
     names = ("Logic.FB", "TimerBlock.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
-             "Calc.FC", "EmptyCalc.FC", "Instances.fbi")
+             "Calc.FC", "EmptyCalc.FC", "Instances.fbi", "LadderBlock.FB")
     xml = "<project>" + "".join('<file id="{}"><Caption>{}</Caption><FileName>{}</FileName></file>'.format(
         i, Path(name).stem, name) for i, name in enumerate(names)) + "</project>"
+    xml = xml.replace("<FileName>LadderBlock.FB</FileName>",
+                      "<FileName>LadderBlock.FB</FileName><FileType>45</FileType><ProgType>7</ProgType>")
     (project / "demo.hcp").write_bytes(st.encode(xml.encode("utf-16")))
     (project / "untouched.txt").write_text("Synthetic non-target", encoding="utf-8")
 
@@ -132,6 +135,11 @@ def run(output):
                         ("response", "OutputData", "INOUT", None),
                         ("timerFirst", "TimerBlock", "VAR", None),
                         ("timerSecond", "TimerBlock", "VAR", None))]
+                declarations.extend([
+                    dict(op="add", name="libraryFB", data_type="ExampleLib.Rise", category="VAR",
+                         type_kind="function_block", initial_value=None, comment="Synthetic library FB"),
+                    dict(op="add", name="ladderFB", data_type="LadderBlock", category="VAR",
+                         initial_value=None, comment="Synthetic registered LD FB")])
                 changes = output / ("changes-" + label + ".json")
                 changes.write_text(json.dumps(dict(schema=1, targets=[
                     dict(file="Logic.FB", source_file=source.name, variable_operations=declarations),
@@ -143,7 +151,9 @@ def run(output):
                         for name, dtype, category in (("enabled", "BOOL", "VAR"), ("inputValue", "INT", "IN"))]),
                     dict(file="Instances.fbi", variable_operations=[dict(op="add", name=name,
                         data_type="TimerBlock", initial_value=None, comment="Synthetic global FB")
-                        for name in ("globalTimerA", "globalTimerB")]),
+                        for name in ("globalTimerA", "globalTimerB")]+[
+                            dict(op="add", name=name, data_type=dtype, initial_value=None, comment="Synthetic named FB")
+                            for name, dtype in (("globalLibraryFB", "ExampleLib.Rise"), ("globalLadderFB", "LadderBlock"))]),
                     dict(file="Globals.gvt", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, comment="Synthetic global", initial_value=None)
                         for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))])])), encoding="utf-8")
@@ -157,11 +167,12 @@ def run(output):
                               "--backup-root", output / ("backups-" + label), "--experimental")
                 assert applied["status"] == "applied"
                 block = fb.parse((project / "Logic.FB").read_bytes())
-                assert len(block.variables) == 7 and block.source == source.read_bytes()
-                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0]
-                assert all(row.type_code == 256 and row.type_text == "TIMERBLOCK"
+                assert len(block.variables) == 9 and block.source == source.read_bytes()
+                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0, 0, 0]
+                assert all(row.type_code == 256 and row.type_text == dtype
                     and row.initial_raw == "" and row.fields == (0, 1, 0xffffffff, 0)
-                    for row in block.variables[-2:])
+                    for row, dtype in zip(block.variables[-4:], ("TIMERBLOCK", "TIMERBLOCK", "EXAMPLELIB.RISE", "LADDERBLOCK")))
+                assert {row["type_identity_source"] for row in built["instance_type_choices"]} == {"explicit_request", "registered_ld"}
                 assert block.line_count == 3 and block.line_table_count == 1
                 assert st.parse((project / "MAIN.ST").read_bytes()).source == source.read_bytes()
                 current = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
@@ -180,12 +191,12 @@ def run(output):
                     assert old_fc.raw[old.offset:old.end] == full_fc.raw[new.offset:new.end]
                 new_fbi = (project / "Instances.fbi").read_bytes()
                 new_instances = instances.parse(new_fbi)
-                assert new_instances["instance_count"] == 4
+                assert new_instances["instance_count"] == 6
                 for old, new in zip(old_instances["instances"], new_instances["instances"]):
                     a, b = old["record_offset"], new["record_offset"]
                     assert original_fbi[a:a+old["record_bytes"]] == new_fbi[b:b+new["record_bytes"]]
-                for row in new_instances["instances"][2:]:
-                    assert row["data_type"] == "TimerBlock" and row["initial_value_raw"] == ""
+                for row, dtype in zip(new_instances["instances"][2:], ("TimerBlock", "TimerBlock", "ExampleLib.Rise", "LadderBlock")):
+                    assert row["data_type"] == dtype and row["initial_value_raw"] == ""
                     assert row["uninterpreted_metadata"]["flags_raw"] == 0
                     assert row["uninterpreted_metadata"]["address_raw"] == 0xffffffff
                 for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC", "Instances.fbi"}:
@@ -265,7 +276,8 @@ def run(output):
                     "--expect-receipt-sha256", digest(receipt), "--backup-root", output / ("restore-" + label), "--experimental")
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
-                    fb_seven_variables=True, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    fb_nine_variables=True, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    local_and_global_library_ld_instances=True,
                     fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,
                     fc_nonempty_and_empty_additions=True,

@@ -1,12 +1,14 @@
 # 关闭工程后的离线编辑
 
+方法一库/已登记LD实例新增已完成本轮限定验收：单项及批量正式offline写入、重开9声明/74实例及全文完整回读，2026-10-29 19:49:05编译0错误；恢复原6/71项后19:52:35再次0错误并完整回读、干净关闭。59份根原生源全部与本轮起点逐字节相同，生成物差量另记，未新增工程副本。本说明随s21完整包提供。
+
 s17补齐已登记LiteST FB内部VAR的项目FB实例新增，含空表首项和批量追加。使用下文原offline系列及完整保护，详见[内部实例专项](validation.md)。
 
 s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局、新空白工程未知HCPP资格另待。
 
 整理方式：AI 根据实现与独立副本验证整理  
 当前状态：CLI 1.03实验扩展；独立副本加载、正文/表回读和编译通过，发布包另做完整性验证  
-最后更新：2026-10-26
+最后更新：2026-10-29
 
 处理已创建并登记的ST、LiteST FB、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
 
@@ -29,6 +31,25 @@ python -B $bridge offline-restore --receipt-file $receipt --expect-receipt-sha25
 exported冻结直接HCP、所有现存登记文件和额外原生文件。没有独立文件的登记列入excluded_nonfile_registration；原本缺失的非原生配置列入declared_missing，必须保持不存在。两者不成为可写目标；缺失原生依赖拒绝。HCPP不签发离线写资格。export/check/build只读，不证明工程已关闭；apply/restore全程保持Windows独占只读HCP句柄。用户仍须关闭工程，独占句柄不能证明其他软件没有旧内存内容。
 
 checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
+
+## 库与已登记LD实例（s21）
+
+下例沿用本页命令，目标宿主仍为已支持LiteST FB，LD是被引用的类型，不编辑其图形。`ExampleLadderFB`必须换为直接HCP登记的准确原名称。VAR新增可带`type_kind:"function_block"`，它明确选择原生256声明种类，用于点限定库名，不证明库存在或业务正确；省略该字段保持既有类型解析规则。已知标量/结构与显式FB种类矛盾时拒绝。FBI天然是FB实例，不接受type_kind或category。
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"fbRise","category":"VAR","data_type":"TRIG.R_TRIG","type_kind":"function_block","initial_value":null,"comment":"Library FB"},
+    {"op":"add","name":"fbLadder","category":"VAR","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD FB"}
+  ]},
+  {"file":"Instances.fbi","variable_operations":[
+    {"op":"add","name":"fbRiseGlobal","data_type":"TRIG.R_TRIG","initial_value":null,"comment":"Library FB"},
+    {"op":"add","name":"fbLadderGlobal","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD FB"}
+  ]}
+]}
+```
+
+两类新增均为null请求/空原生默认初始化，不生成传递布局或地址。VAR原生类型文本大写，FBI保持请求的准确原名称。已登记LD依据直接HCP类型与受保护原件识别，不要求解析图形或递归证明接口语义。库的存在性、类型使用和引用交调用AI及AutoShop编译；`instance_type_choices`区分`registered_ld`和`explicit_request`，并报告`library_existence_checked=false`、`compile_pending=true`。冻结工程登记及可读工程文件，不宣称检查或冻结外部安装库。正文及多文件组织由调用AI明确提供，完整基线、备份、候选重建和回读保护不变。
 
 ## 全局FBI项目FB实例（s18）
 
@@ -69,7 +90,7 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 ]}]}
 ```
 
-空表首项、第二项及非空批量同格式，每目标1–32项，最多4096声明。引用类型须是精确登记并可解析的LiteST项目FB；FBI原生类型文本保留准确名称大小写，不套用内部VAR的大写规则。新记录为空初始化、flags0和FFFFFFFF未分配地址，AutoShop加载/编译负责布局和分配，不生成传递初始化，不改类型定义或旧实例。V4.11.0.5正常加载可把新记录flags从0改为256，编译再分配地址；完整语义未解码，工具不预写256绕过。加载/编译后需重新获取基线，不重放旧plan。库名、LD FB、显式复杂初值及其他字段尚未实现。
+空表首项、第二项及非空批量同格式，每目标1–32项，最多4096声明。s18已交付精确登记并可解析的LiteST项目FB；s21扩展的库/已登记LD类型见上节。FBI原生类型文本保留准确名称大小写，不套内部VAR大写规则。新记录为空初始化、flags0和FFFFFFFF未分配地址，AutoShop加载/编译负责布局和分配，不生成传递初始化，不改类型定义或旧实例。V4.11.0.5正常加载可把新记录flags从0改为256，编译再分配地址；完整语义未解码，工具不预写256绕过。加载/编译后重新获取基线，不重放旧plan。显式复杂初值构造及其他未知字段仍另待。
 
 新增只接受已观察双表容器：移除声明后须严格匹配完整已验空表与共享CArchive状态。唯一记录段能读、能删除，不表示任意容器可新增。未知布局返回offline_unsupported_fbi_layout，context包含profile、field，能定位记录段时提供record_segment_offset和record_segment_bytes，否则给出original_error；显式初值返回offline_unsupported_fbi_initializer，未知类型返回offline_unsupported_fb_instance。目标格式拒绝补target及相关操作/变量/类型，不要求调用者修改未知字节或清零绕过。
 
@@ -86,9 +107,9 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 ]}]}
 ```
 
-`Controller`和`TimerBlock`仅为合成名称，必须换成实际登记对象。空表和非空表采用相同清单；每个目标最多32项。新记录采用正常IDE保存已观察的类型码256、FB类型名大写形式（如TimerBlock→TIMERBLOCK）、空初始化串及VAR/不保持/未分配字段；初值必须null，显式复杂初值、FB类型的IN/OUT/INOUT、库名或LD FB的离线新增尚未实现。传入正确登记名，读回大写类型文本属于IDE原生规则，不手改类型文件或只读快照“修复”大小写。
+`Controller`和`TimerBlock`仅为合成名称，必须换成实际登记对象。空表和非空表采用相同清单；每目标最多32项。新记录采用正常IDE保存已观察的类型码256、FB类型名大写形式（如TimerBlock→TIMERBLOCK）、空初始化串及VAR/不保持/未分配字段；初值必须null，显式复杂初值构造和FB类型IN/OUT/INOUT仍未实现。s21扩展的库/已登记LD类型见上节；传入准确原名称，读回大写属于原生规则，不手改类型文件或只读快照“修复”大小写。
 
-内部实例不使用全局FBI容器，不生成地址、传递布局或结构成员初始化串；已有记录的初始化、类型拼写、全部字段和顺序原样保留。仅验证本次所需FB定义的登记、可解析容器及准确头部，所有文件哈希仍被冻结。不因无关LD/FB未解析、引用FB中已有库/结构成员或正文尚未修完而拒绝这个已支持的记录新增；不推导编译语义或自动更新调用。正文引用由调用者另改；可在同一目标显式加入source_file，多文件安排同样由调用者组织，最终交AutoShop编译。
+内部实例不使用全局FBI容器，不生成地址、传递布局或结构成员初始化串；已有记录的初始化、类型拼写、全部字段和顺序原样保留。本次所需项目类型核对登记和已识别身份，库FB由调用者显式选择声明种类；全部工程文件哈希保护保持，不宣称冻结外部安装库。不因无关LD/FB未解析、引用FB中已有库/结构成员或正文尚未修完而拒绝已支持新增；不推导编译语义或自动更新调用。正文引用由调用者另改，可在同一目标显式加入source_file，多文件安排也由调用者组织，最终交AutoShop编译。
 
 重开工程后用editor-read完整核对正文、声明及未保存状态，编译另行执行。方法二同样接受已观察的FB类型大写显示，仍逐格核对整表和备份。编译通过不表示PLC行为已验证。
 

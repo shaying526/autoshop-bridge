@@ -13,6 +13,8 @@ FBI已有实例的名称、注释和初值走[既有实例编辑](references/dat
 
 s20实现正常IDE选择点限定库类型和已登记LD功能块引用：LiteST宿主内部VAR用editor-variables，全局FBI用instances-editor-add及其FB专用选择器。准确根定义/哈希和真实选择器保证执行资格，不递归证明业务语义。平面结构混合空/非空成员注释两模式及关联改名采用同一已观察模板，保留末尾分隔符。详细例子、保存地址差量及尚未实现范围见[变量和表](references/data-editing.md)；本批已完成独立副本组合及恢复后的0错误编译；这些历史证据不代替调用者本次工程验收。
 
+s21方法一支持库/已登记LD实例：VAR库add用`type_kind:"function_block"`显式选择256记录，FBI天然FB、不带该字段；类型存在性与业务语义交编译，不宣称冻结外部安装库。限定样本、单项/批量写入、重开完整回读及组合/恢复0错误编译已验。JSON和边界见[变量和表](references/data-editing.md)；先核对安装修订号，历史验证不代替本次工程验收。
+
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
 说明中的**文件直改模式（方法一，Direct File Mode）**对应程序标识`file`，直接读写磁盘原生文件；**编辑器操作模式（方法二，Editor Mode）**对应`editor`，操作AutoShop编辑器缓冲并显式保存。这里只统一说明名称，不改命令、参数、API或结果状态。
@@ -35,13 +37,13 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-29.s20`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-29.s21`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 
 1. 先有界工程摘要；需要定义/引用时用`code-context`，按需导出和读片段，避免把整工程或窗口整表倾倒到上下文。已保存内容优先文件读取，磁盘不包含未保存缓冲。
    梯形图程序/FB读取改走[梯形图只读](references/ladder-reading.md)的随包独立脚本；已知文件绝对路径可直接读，不依赖HCP。先摘要，再分页读指定网络、引脚、连接和FB变量；不要用ST导出器或把默认scan的“仅识别”误当新读取入口。LD写入/排序仍未发布。
-2. 选择模式。工程已关闭，需要正文增删行、空FB首变量、内部/全局项目FB实例或GVT结构变量时，读[离线开发](references/offline-editing.md)，使用独立offline系列，不沿用旧build/apply的同LF限制，也不能放宽未知行字段。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
+2. 选择模式。工程已关闭，需要正文增删行、空FB首变量、内部/全局FB实例或GVT结构变量时，读[离线开发](references/offline-editing.md)，使用独立offline系列；方法一库/LD示例另见[变量和表](references/data-editing.md)，先核对本包版本。不要沿用旧build/apply的同LF限制或放宽未知行字段。方法二通过编辑器修改，可自动打开/切换目标标签；默认只改缓冲，显式`--save`才保存。不要先文件写入再用旧窗口/旧基线同步。
 3. 正文任务按[正文编辑](references/source-editing.md)导出、核对基线、制作唯一原文补丁、预检并调用既有写入器。变量/表/实例新增修改改读[变量和表](references/data-editing.md)；明确删除改读[声明删除](references/declaration-editing.md)，使用独立declarations-read/editor-declarations-delete或offline入口，不向旧清单塞入delete。删除不查引用、不级联，语义交编译，完整性保护仍保留。不要把变量声明塞进正文或编辑只读快照。
 4. 逐条检查退出码及JSON状态后再继续。备份成功、当前原文/哈希和完整回读不能省。保存后重新导出用于后续修改；同一工程/会话串行执行。
 5. 分别报告缓冲更新、原生保存、回读、用户编译反馈和业务行为验证。只读或本地候选任务完成后，不额外写入/保存。

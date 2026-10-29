@@ -41,9 +41,32 @@ s8明确删除走[声明删除](declaration-editing.md)的declarations-read/edit
 
 整理方式：AI 根据现有表与变量适配整理  
 当前状态：限定操作；不把读到类型等同能写该类型  
-最后更新：2026-10-28
+最后更新：2026-10-29
 
 所有示例沿用SKILL.md已设置的绝对路径和用户准确对象名。执行前读取当前表/正文/原生基线；从结果选取实际行，不把示例名称当目标。默认不保存，`--save`才保存，`--close`需配保存；dry-run不能自动打开标签。真实写入需已有用户授权且`--experimental`，每步检查结果。
+
+## 方法一库与LD实例（s21限定验收）
+
+目标宿主仍为已登记LiteST FB，全局实例为已识别严格FBI；LD只是被引用的类型，不编辑其图形。先按[offline系列](offline-editing.md)关闭目标工程、export冻结基线，再对以下changes.json执行check/build/apply。`ExampleLadderFB`替换为直接HCP中的准确登记原名称；这些新格式目前仅s21开发源实现，当前已发布仍s20，先确认实际安装版本支持。
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"fbRiseFile","category":"VAR","data_type":"TRIG.R_TRIG","type_kind":"function_block","initial_value":null,"comment":"Library FB"},
+    {"op":"add","name":"fbLadderFile","category":"VAR","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD FB"}
+  ]},
+  {"file":"Instances.fbi","variable_operations":[
+    {"op":"add","name":"fbRiseGlobalFile","data_type":"TRIG.R_TRIG","initial_value":null,"comment":"Library FB"},
+    {"op":"add","name":"fbLadderGlobalFile","data_type":"ExampleLadderFB","initial_value":null,"comment":"Registered LD FB"}
+  ]}
+]}
+```
+
+VAR add可选`type_kind:"function_block"`是调用者明确选择原生256声明种类；点限定库FB用此字段区分于结构，省略时保持既有解析规则。它不证明库存在，也不要求工具递归证明业务依赖。已知标量/结构与显式FB种类矛盾仍拒绝。FBI天然FB，不接受type_kind或category；LD引用按直接HCP准确类型身份处理，不解析图形。
+
+两类初值均显式null，生成空原生默认串，不复制/推算布局和地址；VAR原生类型文字大写，FBI保持请求原名称。`instance_type_choices`报告`registered_ld`或`explicit_request`，`library_existence_checked=false`且`compile_pending=true`。工程登记和可读文件哈希仍冻结，外部安装库不宣称已解析或冻结；库存在性、引用和语义交调用AI及AutoShop编译。正文和多文件修改由调用AI显式组织，备份、候选重建、完整回读及非目标保护保持。
+
+当前样本10条记录与3份整文件exact，正式单项/批量check/build/apply通过且仅目标变化；重开已独立分类3个新FBI flags 0→256、其他49源exact，完整读表和两次0错误编译均通过。不能把applied、候选或s20历史编译结果当作本轮编译通过，也不声称s21已发布。
 
 ## FB/FC内部变量
 
@@ -62,7 +85,7 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ```
 
 - FB：已有注释/BOOL/INT/DINT标量初值限定set；VAR/IN/OUT新增BOOL/INT/DINT，初值字符串。INOUT可新增这些标量；IN/OUT/INOUT可新增项目结构，内部VAR可新增项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。平面BOOL/INT/DINT结构支持全空、全非空及混合成员注释，详见下节。宿主须为已支持LiteST FB，不能用此入口直接修改LD宿主。
-- s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；未登记单段库名、方法一库/LD实例构造和未知原生布局尚未实现。
+- s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；方法二未登记单段库名及未知原生布局仍未实现。方法一库/LD的s21开发用法见上节，不向editor-variables清单加入type_kind。
 - 内部VAR选择器未读取类型分类，未登记点限定名称先标`ide_resolved`，不预断为FB。保存后只接受原生64（结构）或256（FB），核对实际名称/类型文本、VAR类别和已知默认字段；结果`named_type_resolution`与备份`native_added_variables.json`记录实际类型及初值。未保存状态仍待原生回读，不能据此报告已确认FB类型。
 - 空表或仅有复杂声明的非空表，可在备份后创建并核对准确默认行，再延后类型选择器预检；有可用标量行时先预检。dry-run不创建行。失败可能留下已知未保存行，先回读现场，不盲目重放。
 - FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT的BOOL/INT/DINT新增initial_value必须null。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。复杂类型、返回类型、FCI和新建FC不开放。不要把FB示例字符串初值套给FC。
@@ -127,7 +150,7 @@ FBI哈希取当次读取；清单schema=1/operations，initial_value必须null�
 ]}
 ```
 
-`ExampleLadderFB`须替换为本次已登记LD类型；库名也取真实选择器。文件模式仅已交付的项目LiteST FB新增，见[offline系列](offline-editing.md#全局fbi项目fb实例s18)；方法一库/LD、未登记单段库名和任意容器构造仍待。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile可两模式删空。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份、核对IDE默认首行，再预检选择器。失败可能留已知未保存行，先回读，不重放。新空白工程未知HCPP登记另待，不拿正文凭据绕过。
+`ExampleLadderFB`须替换为本次已登记LD类型；方法二库名也取真实选择器。s18文件模式项目LiteST FB新增见[offline系列](offline-editing.md#全局fbi项目fb实例s18)，方法一库/LD的s21开发格式见本页上节。方法二未登记单段库名、任意容器构造仍待。删除改走独立声明入口，已识别FBI原件可backup/restore；严格profile可两模式删空。空表dry-run返回selector_preflight=pending_first_default_row，不创建行/备份；真实执行先备份、核对IDE默认首行，再预检选择器。失败可能留已知未保存行，先回读，不重放。新空白工程未知HCPP登记另待，不拿正文凭据绕过。
 
 FBI新增逐格操作读取新行完整11列，并核对全部声明名称、计数及唯一ID；保存前和保存后仍完整读取整表，不以局部页冒充完整回读。新增入口允许区分界面分配预览与原生地址，结果分开报告：
 

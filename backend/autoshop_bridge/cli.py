@@ -374,7 +374,7 @@ def _offline_command(command, args):
         "status", "workspace", "manifest", "protected_files", "registration_source",
         "excluded_nonfile_registration_count", "declared_missing_count",
         "plan", "plan_sha256", "receipt", "receipt_sha256", "backup_run", "validation", "qualification", "error", "error_code", "error_context",
-        "deletion_preflight_scope", "reference_check", "compile_pending", "cascade",
+        "deletion_preflight_scope", "reference_check", "compile_pending", "cascade", "instance_type_choices",
     ) if key in result}
     if isinstance(summary.get("manifest"), dict):
         del summary["manifest"]

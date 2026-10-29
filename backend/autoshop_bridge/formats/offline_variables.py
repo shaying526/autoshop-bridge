@@ -1,11 +1,12 @@
 """Pure FB variable candidates; no registration, files, IDE or address allocation.
 
-The caller must prove registered FB/type identity, freeze definition hashes and
-provide backup/conflict protection before any write. These candidates still need
+The caller identifies registered types or explicitly selects a library FB
+record kind, freezes project hashes and protects writes. Candidates still need
 IDE reopen/save/compile acceptance. No GVT complex encoder is inferred here.
 """
 
 import struct
+from dataclasses import dataclass
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import fb, tables
@@ -15,6 +16,28 @@ from autoshop_bridge.projects.identifiers import precheck_addition_names
 
 PROFILE = "fb-flat-scalar-variables-candidate-v1"
 SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16}
+
+
+@dataclass(frozen=True)
+class FBInstanceType:
+    """Explicit FB record identity, not a parsed graph or semantic proof.
+
+    The workflow freezes direct-HCP LD identities or records the caller's
+    explicit library FB choice. No native definition/layout is fabricated.
+    """
+    name: str
+    source: str
+
+
+def instance_definition(name, definition):
+    if isinstance(definition, FBInstanceType):
+        if definition.name != name or definition.source not in ("registered_ld", "explicit_request"):
+            raise BridgeError("FB record type descriptor identity differs.")
+        return definition
+    parsed = fb.parse(definition)
+    if parsed.program_name != name:
+        raise BridgeError("Project FB definition identity differs.")
+    return FBInstanceType(name, "registered_litest")
 
 
 def _text(value):
@@ -81,30 +104,39 @@ def _record(op, definitions):
     if code is None:
         if category not in ("VAR", "IN", "OUT", "INOUT") or dtype not in definitions or initial is not None:
             raise BridgeError("Named-type additions require an explicit definition and null initializer.")
+        definition = definitions[dtype]
         try:
-            block = fb.parse(definitions[dtype])
+            block = instance_definition(dtype, definition)
         except BridgeError:
+            if isinstance(definition, FBInstanceType):
+                raise
             block = None
         type_text = dtype
         if block is not None:
-            if block.program_name != dtype or category != "VAR":
+            if category != "VAR":
                 raise FormatRejection(
                     "Project FB instances require the exact type identity and category VAR.",
                     code="offline_unsupported_fb_instance",
                     context=dict(variable=op["name"], data_type=dtype, category=category,
-                                 definition_name=block.program_name, field="category" if category != "VAR" else "data_type"),
+                                 definition_name=block.name, field="category"),
                 )
+            if block.source == "explicit_request" and op.get("type_kind") != "function_block":
+                raise BridgeError("Library VAR additions require type_kind=function_block to distinguish FBs from structures.")
             # Normal V4.11.0.5 saves of project FBs with scalar and structure
             # interfaces produce this empty default. No transitive initializer
             # or layout/address is synthesized from the referenced definition.
             code, type_text, initial = 256, dtype.upper(), ""
         else:
+            if "type_kind" in op:
+                raise BridgeError("Explicit function_block kind conflicts with a structure definition.")
             code = 64
             try:
                 initial = flat_structure_initial(definitions[dtype], dtype)
             except FormatRejection as exc:
                 exc.context.update(variable=op["name"], category=category)
                 raise
+    elif "type_kind" in op:
+        raise BridgeError("Explicit function_block kind conflicts with a scalar type.")
     elif category == "INOUT":
         if initial is not None:
             raise BridgeError("INOUT requires a null independent initializer.")
@@ -122,7 +154,7 @@ def rebuild_fb(raw, operations, structure_definitions=None):
     """Return bytes with exact existing-record/prefix/embedded-object preservation.
 
     ``structure_definitions`` retains its historical argument name and maps
-    exact type names to caller-validated native STRU or LiteST FB bytes.
+    exact type names to native STRU/LiteST bytes or explicit FBInstanceType.
     Registration and stale-hash checks belong to the caller. Neither
     addresses nor opaque tail fields can be supplied through this API.
     """
@@ -134,7 +166,7 @@ def rebuild_fb(raw, operations, structure_definitions=None):
         raise BridgeError("Invalid Unicode in FB declaration.") from exc
     definitions = {} if structure_definitions is None else structure_definitions
     if not isinstance(definitions, dict):
-        raise BridgeError("Type definitions must be an exact name/bytes mapping.")
+        raise BridgeError("Type definitions must map exact names to native bytes or FB descriptors.")
     result = raw
     for operation_index, op in enumerate(operations):
         before = fb.parse(result)
@@ -147,7 +179,8 @@ def rebuild_fb(raw, operations, structure_definitions=None):
         if not isinstance(op, dict):
             raise BridgeError("Variable operation must be an object.")
         if op.get("op") == "add":
-            if set(op) != {"op", "name", "data_type", "category", "initial_value", "comment"}:
+            fields = {"op", "name", "data_type", "category", "initial_value", "comment"}
+            if set(op) not in (fields, fields | {"type_kind"}) or ("type_kind" in op and op["type_kind"] != "function_block"):
                 raise BridgeError("Add requires the exact FB declaration fields.")
             _text(op["name"])
             if (not tables.identifier(op["name"]) or len(before.variables) >= 4096
