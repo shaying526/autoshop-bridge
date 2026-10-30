@@ -202,6 +202,8 @@ def run(driver, action, expected_snapshot_sha256, evidence, *, experimental=Fals
     try:
         last = driver.snapshot()
         _require(snapshot_sha256(last) == expected_snapshot_sha256, 'window snapshot baseline conflict')
+        identity = dict(last['identity'])
+        project_file = last['project_file']
         _require(not last['dialogs'] and last['enabled'] and not last['duplicates'], 'modal or ambiguous window')
         _require(not last['dirty'] and not last['cell_edits'], 'unsaved content or active cell editing')
         required = 'closed' if action == 'open' else 'opened'
@@ -266,6 +268,15 @@ def run(driver, action, expected_snapshot_sha256, evidence, *, experimental=Fals
         _require(last['state'] == expected_state and last['enabled'] and not any(
                  last[k] for k in ('dirty', 'cell_edits', 'dialogs', 'duplicates')),
                  'window changed during final native verification')
+        # Cached HWND/title data may still exist while WER reports a fault.
+        # Require an acknowledged, read-only main-thread message plus live
+        # process identity at this boundary, not merely another cached read.
+        phase = 'final_process_verify'
+        current = driver.verify_responsive(last)
+        _require(current['identity'] == identity and current['project_file'] == project_file,
+                 'process/project identity changed before lifecycle success')
+        _require(current == last, 'window changed before lifecycle success')
+        last = current
         result.update(status='project_' + ('reopened' if action == 'reopen' else 'opened' if action == 'open' else 'closed'),
                       final_snapshot=last, final_snapshot_sha256=snapshot_sha256(last),
                       hcp_release_verified=action in ('close', 'reopen'), phase='complete')
@@ -303,6 +314,10 @@ class WindowsProjectDriver:
         a.user.GetDlgCtrlID.argtypes = [w.HWND]
         a.user.GetWindow.argtypes, a.user.GetWindow.restype = [w.HWND, w.UINT], w.HWND
         a.kernel.GetProcessTimes.argtypes = [w.HANDLE] + [ctypes.POINTER(w.FILETIME)] * 4
+        a.kernel.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+        a.kernel.WaitForSingleObject.restype = w.DWORD
+        a.kernel.GetExitCodeProcess.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
+        a.kernel.GetExitCodeProcess.restype = w.BOOL
         self.identity = self._identity()
         self._check_resources()
         self.open_dialog = None
@@ -311,14 +326,22 @@ class WindowsProjectDriver:
         a, c, w = self.a, self.c, self.w
         _require(a.user.IsWindow(a.main) and a.window_pid(a.main) == a.pid and a.is_autoshop(a.pid),
                  'process/window identity changed')
-        handle = a.kernel.OpenProcess(0x1000, False, a.pid)
+        handle = a.kernel.OpenProcess(0x101000, False, a.pid)  # SYNCHRONIZE | QUERY_LIMITED_INFORMATION
         _require(handle, 'cannot inspect process identity')
         try:
+            _require(a.kernel.WaitForSingleObject(handle, 0) == 0x102,
+                     'target process exited or its liveness cannot be verified')
+            exit_code = w.DWORD()
+            _require(a.kernel.GetExitCodeProcess(handle, c.byref(exit_code))
+                     and exit_code.value == 259, 'target process is not active')
             exe = c.create_unicode_buffer(32768)
             size = w.DWORD(len(exe))
             _require(a.kernel.QueryFullProcessImageNameW(handle, 0, exe, c.byref(size)), 'cannot inspect process path')
             times = [w.FILETIME() for _ in range(4)]
             _require(a.kernel.GetProcessTimes(handle, *(c.byref(t) for t in times)), 'cannot inspect process start')
+            _require(a.kernel.WaitForSingleObject(handle, 0) == 0x102
+                     and a.user.IsWindow(a.main) and a.window_pid(a.main) == a.pid,
+                     'target process/window exited during identity observation')
             return dict(pid=a.pid, main=a.main, exe=exe.value,
                         creation_time=(times[0].dwHighDateTime << 32) | times[0].dwLowDateTime)
         finally:
@@ -346,6 +369,19 @@ class WindowsProjectDriver:
         # on attachment; the same HWND/PID/start-time/exe remain mandatory.
         # Only a stable exact project/idle title permits the NEXT UI action.
         project_path(self.project_file)
+
+    def verify_responsive(self, expected):
+        """One bounded WM_NULL acknowledgement; no activation or retry.
+
+        This proves a responsive, live target at the observation instant. It
+        cannot guarantee that the vendor application will never exit later.
+        """
+        self._guard()
+        self.a.window_message(self.a.main, 0)  # WM_NULL, existing 1500ms transport bound.
+        self._guard()
+        current = self.snapshot()
+        _require(current == expected, 'window changed during final response verification')
+        return current
 
     def _dialogs(self):
         a = self.a
@@ -384,9 +420,11 @@ class WindowsProjectDriver:
                 duplicates.append(dict(hwnd=h, pid=a.window_pid(h), title=a.text(h)))
             return True
         _require(a.user.EnumWindows(top, 0), 'cannot inspect duplicate project windows')
-        return dict(schema=1, project_file=str(self.project_file), identity=self.identity, state=state,
+        result = dict(schema=1, project_file=str(self.project_file), identity=self.identity, state=state,
                     title=title, enabled=bool(a.user.IsWindowEnabled(a.main)), documents=documents,
                     dirty=dirty, cell_edits=cell_edits, dialogs=self._dialogs(), duplicates=duplicates)
+        self._guard()  # Win32 enumeration may outlive the process it observed.
+        return result
 
     def _snapshot_modified(self, handle):
         try:

@@ -4,10 +4,42 @@ import copy
 
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import fc
+from autoshop_bridge.formats.fb import Reader
 from autoshop_bridge.formats.tables import identifier
+from autoshop_bridge.formats.scalar_types import STRING_DEFAULT_LENGTH
 from autoshop_bridge.projects.identifiers import precheck_addition_names
+from autoshop_bridge.projects.types import descriptor, selector_name
 from autoshop_bridge.storage import assert_hash, create_backup, target_lock, write_json_new
 from autoshop_bridge.windows.session import assert_clean_native, snapshot, verify_saved
+
+
+def verify_native_preserved(before, after, operations):
+    """Authenticate the FC envelope and all non-target native record bytes."""
+    old,new=fc.parse(before),fc.parse(after)
+    if old.source!=new.source:raise BridgeError('FC variable save changed the body.')
+    def count_offset(raw,obj):
+        reader=Reader(raw,obj.variable_header_offset,obj.inner_offset-4)
+        reader.string();reader.u32()
+        return reader.pos
+    if before[:count_offset(before,old)]!=after[:count_offset(after,new)]:
+        raise BridgeError('FC variable save changed the opaque FC envelope/header.')
+    if before[old.inner_offset-4:]!=after[new.inner_offset-4:]:
+        raise BridgeError('FC variable save changed the protected inner metadata or tail.')
+    added=[op['name'] for op in operations if op['op']=='add']
+    if [v.name for v in new.variables]!=[v.name for v in old.variables]+added:
+        raise BridgeError('FC variable save changed native record ordering/count.')
+    comments={op['name']:op['value'] for op in operations if op['op']=='set'}
+    def regions(raw,var):
+        reader=Reader(raw,var.offset,var.end)
+        reader.string();reader.u32();reader.string();start=reader.pos
+        reader.string();end=reader.pos
+        return raw[var.offset:start],raw[start:end],raw[end:var.end]
+    for left,right in zip(old.variables,new.variables):
+        a,b=regions(before,left),regions(after,right)
+        if (a[0]!=b[0] or a[2]!=b[2]
+                or (left.name not in comments and a[1]!=b[1])
+                or right.comment!=comments.get(left.name,left.comment)):
+            raise BridgeError('FC variable save changed unrequested native record bytes: '+left.name)
 
 
 def validate(document, rows):
@@ -35,7 +67,8 @@ def validate(document, rows):
             if set(op) != {"op", "name", "data_type", "category", "initial_value", "comment"}:
                 raise BridgeError("FC add requires name/category/data_type/initial_value/comment.")
             if (not identifier(op["name"]) or op["category"] not in ("VAR", "IN", "OUT", "INOUT")
-                    or op["data_type"] not in ("BOOL", "INT", "DINT") or op["initial_value"] is not None
+                    or descriptor(op["data_type"]) is None
+                    or op["initial_value"] is not None
                     or any(r["name"].casefold() == op["name"].casefold() for r in planned)
                     or len(planned) >= 4096):
                 raise BridgeError("FC additions require unique scalar variables and initial_value=null.")
@@ -84,6 +117,13 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
             if desired == current:
                 return
             actual = adapter.set_cell(name, field, old, value)
+            scalar=descriptor(value) if field=='data_type' else None
+            if scalar is not None and scalar.code==2048:
+                row=next(r for r in actual if r['name']==name)
+                allowed_types=(scalar.canonical,'STRING') if scalar.string_length==STRING_DEFAULT_LENGTH else (scalar.canonical,)
+                if row['data_type'] not in allowed_types:
+                    raise BridgeError('FC STRING selection returned an unexpected display type.')
+                next(r for r in desired if r['name']==name)['data_type']=row['data_type']
             if actual != desired:
                 raise BridgeError("FC full-table readback differs after edit.")
             current = actual
@@ -92,13 +132,13 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
         def inspect_selectors(probe):
             types = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
             categories = adapter.selector_choices(probe["name"], "category", probe["category"])
-            if categories != ["VAR", "IN", "OUT", "INOUT"] or any(types.count(op["data_type"]) != 1 for op in additions):
+            if categories != ["VAR", "IN", "OUT", "INOUT"] or any(types.count(selector_name(op["data_type"])) != 1 for op in additions):
                 raise BridgeError("FC type/category selector differs.")
 
         try:
             deferred_selector = bool(additions and not current)
             if additions and current:
-                probe = next((r for r in current if r["data_type"] in ("BOOL", "INT", "DINT")), None)
+                probe = next((r for r in current if descriptor(r["data_type"]) is not None), None)
                 if probe is None:
                     raise BridgeError("A scalar FC row is required for type-selector preflight.")
                 inspect_selectors(probe)
@@ -145,10 +185,20 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
             if save:
                 adapter.save()
                 digest = verify_saved(adapter, target, after)
-                obj = fc.parse(assert_hash(target, digest))
+                saved_raw=assert_hash(target,digest)
+                verify_native_preserved(raw,saved_raw,operations)
+                obj = fc.parse(saved_raw)
                 for old, new in zip(original.variables, obj.variables):
                     if (old.name, old.type_text, old.type_code, old.fields) != (new.name, new.type_text, new.type_code, new.fields):
                         raise BridgeError("FC save changed original variable definitions/opaque fields.")
+                final_rows={row['name']:row for row in after['variables']}
+                for op,new in zip(additions,obj.variables[len(original.variables):]):
+                    scalar=descriptor(op['data_type'])
+                    if (new.name!=op['name'] or new.type_code!=scalar.code
+                            or (new.type_text!=scalar.type_text if scalar.code==2048 else new.type_text not in ('',scalar.canonical))
+                            or new.fields!=({'VAR':0,'IN':1,'OUT':2,'INOUT':3}[op['category']],0xffffffff,0)
+                            or new.comment!=final_rows[op['name']]['comment']):
+                        raise BridgeError('FC saved scalar descriptor/category/length differs from the requested declaration.')
                 result.update(status="variables_saved", sha256=digest, requires_manual_save=False)
                 if close_after:
                     adapter.close()

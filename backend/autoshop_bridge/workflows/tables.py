@@ -98,7 +98,7 @@ def load(workspace, *, editor_project=None):
     precheck_addition_names(changes)
     named = [op["data_type"] for op in operations
              if isinstance(op, dict) and op.get("op") == "add"
-             and op.get("data_type") not in ("BOOL", "INT", "DINT")]
+             and type_context.descriptor(op.get("data_type")) is None]
     if editor_project is not None and obj.kind == "gvt" and named:
         from autoshop_bridge.formats.offline_globals import rebuild
         context = type_context.catalog(editor_project, named)
@@ -142,6 +142,34 @@ def _assert_editor_saved(candidate, after, complex_names):
             right["uninterpreted_metadata"]["address_raw"] = left["uninterpreted_metadata"]["address_raw"]
     if expected != actual:
         raise BridgeError("Saved table metadata or non-target fields differ from candidate.")
+    if candidate.raw[:candidate.count_offset+4]!=after.raw[:after.count_offset+4]:
+        raise BridgeError('Saved table changed the opaque native envelope/header.')
+
+    def retained_regions(obj,row,spans):
+        parts=[];start=row.start
+        for left,right in sorted(spans):
+            if not start<=left<=right<=row.end:
+                raise BridgeError('Invalid protected table record boundary.')
+            parts.append(obj.raw[start:left]);start=right
+        parts.append(obj.raw[start:row.end])
+        return parts
+
+    for left,right in zip(candidate.rows,after.rows):
+        ignored_left=[];ignored_right=[]
+        # Preserve the established native comment-separator normalization only;
+        # same decoded text with a rewritten CString prefix is not an exception.
+        if left.comment!=right.comment:
+            ignored_left.append(left.spans['comment']);ignored_right.append(right.spans['comment'])
+        if left.name in complex_names:
+            # These two new-row fields were already explicitly delegated to
+            # IDE structure defaults/address allocation. No surrounding flags,
+            # descriptors, CString fields or opaque prefix is exempted.
+            ignored_left.append(left.spans['initial_value']);ignored_right.append(right.spans['initial_value'])
+            left_address=left.spans['initial_value'][1]+4
+            right_address=right.spans['initial_value'][1]+4
+            ignored_left.append((left_address,left_address+4));ignored_right.append((right_address,right_address+4))
+        if retained_regions(candidate,left,ignored_left)!=retained_regions(after,right,ignored_right):
+            raise BridgeError('Saved table changed protected native record bytes: '+left.name)
 
 
 def target_for(manifest, target=None):
@@ -347,10 +375,17 @@ def editor_edit(
             raise BridgeError("Table editor has unsaved changes.")
         assert_native_table(obj, before)
         dependencies()
+        prepare_rows=getattr(adapter,'prepare_edit_rows',None)
+        if edited and not dry_run and callable(prepare_rows):
+            before=prepare_rows(before)
+            if adapter.dirty():raise BridgeError('Table editor became dirty while preparing actual declaration metadata.')
+            assert_hash(target,manifest['native_sha256'])
+            assert_native_table(obj,before)
+            dependencies()
         requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in complex_names}
         deferred_preflight = bool(complex_names) and not before
         if complex_names and before:
-            probe = next((r for r in before if r["data_type"] in ("BOOL", "INT", "DINT")), before[0])
+            probe = next((r for r in before if type_context.descriptor(r["data_type"]) is not None), before[0])
             choices = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
             if any(choices.count(name) != 1 for name in requested_types):
                 raise BridgeError("Requested project structure is unavailable or ambiguous in the IDE selector.")
@@ -376,6 +411,9 @@ def editor_edit(
             saved / "table_editor_changes.json", dict(schema=1, operations=ops)
         )
         write_json_new(saved / "table_editor_dependencies.json", dict(types=context, instances=instance_hashes))
+        preparation=getattr(adapter,'last_edit_row_preparation',None)
+        if preparation is not None and preparation.get('targeted_names'):
+            write_json_new(saved/'table_editor_preparation.json',preparation)
         if adapter.dirty() or adapter.grid() != before:
             raise BridgeError("Table editor changed during backup.")
         assert_hash(target, manifest["native_sha256"])

@@ -122,6 +122,7 @@ def run(output):
                 from autoshop_bridge.formats import fb, fc, st, tables, instances
                 baseline = tree(project)
                 old_fc = fc.parse((project / "Calc.FC").read_bytes())
+                old_empty_fc = fc.parse((project / "EmptyCalc.FC").read_bytes())
                 old_global = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
                 original_fbi = (project / "Instances.fbi").read_bytes()
                 old_instances = instances.parse(original_fbi)
@@ -133,6 +134,8 @@ def run(output):
                         ("enabled", "BOOL", "VAR", "OFF"), ("command", "INT", "VAR", "0"),
                         ("value", "DINT", "VAR", "0"), ("request", "InputData", "INOUT", None),
                         ("response", "OutputData", "INOUT", None),
+                        ("rLocalValue", "REAL", "VAR", "1.250000"),
+                        ("sLocalText", "STRING<20>", "VAR", '"Bridge text"'),
                         ("timerFirst", "TimerBlock", "VAR", None),
                         ("timerSecond", "TimerBlock", "VAR", None))]
                 declarations.extend([
@@ -148,7 +151,8 @@ def run(output):
                         data_type="DINT", category="INOUT", initial_value=None, comment="Synthetic reference")]),
                     dict(file="EmptyCalc.FC", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, category=category, initial_value=None, comment="Synthetic FC")
-                        for name, dtype, category in (("enabled", "BOOL", "VAR"), ("inputValue", "INT", "IN"))]),
+                        for name, dtype, category in (("enabled", "BOOL", "VAR"), ("inputValue", "INT", "IN"),
+                            ("rOutput", "REAL", "OUT"), ("sReference", "STRING", "INOUT"))]),
                     dict(file="Instances.fbi", variable_operations=[dict(op="add", name=name,
                         data_type="TimerBlock", initial_value=None, comment="Synthetic global FB")
                         for name in ("globalTimerA", "globalTimerB")]+[
@@ -156,7 +160,9 @@ def run(output):
                             for name, dtype in (("globalLibraryFB", "ExampleLib.Rise"), ("globalLadderFB", "LadderBlock"))]),
                     dict(file="Globals.gvt", variable_operations=[dict(op="add", name=name,
                         data_type=dtype, comment="Synthetic global", initial_value=None)
-                        for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))])])), encoding="utf-8")
+                        for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))]+[
+                            dict(op="add", name="grRealValue", data_type="REAL", initial_value="1.250000", comment="Synthetic real"),
+                            dict(op="add", name="gsText", data_type="STRING<20>", initial_value='"Global text"', comment="Synthetic string")])])), encoding="utf-8")
                 assert cli(skill, "offline-export", "--project", project, "--workspace", work)["status"] == "exported"
                 assert cli(skill, "offline-check", "--workspace", work, "--changes", changes)["status"] == "checked"
                 built = cli(skill, "offline-build", "--workspace", work, "--changes", changes)
@@ -167,8 +173,13 @@ def run(output):
                               "--backup-root", output / ("backups-" + label), "--experimental")
                 assert applied["status"] == "applied"
                 block = fb.parse((project / "Logic.FB").read_bytes())
-                assert len(block.variables) == 9 and block.source == source.read_bytes()
-                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0, 0, 0]
+                assert len(block.variables) == 11 and block.source == source.read_bytes()
+                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0]
+                assert [(row.type_code, row.type_text, row.initial_raw, row.fields)
+                    for row in block.variables[5:7]] == [
+                        (32, "", "1.250000", (0, 1, 0xffffffff, 0)),
+                        (2048, "STRING<20>", '"Bridge text"', (0, 1, 0xffffffff, 0))]
+                assert [row.as_dict(index + 5)["data_type"] for index, row in enumerate(block.variables[5:7])] == ["REAL", "STRING<20>"]
                 assert all(row.type_code == 256 and row.type_text == dtype
                     and row.initial_raw == "" and row.fields == (0, 1, 0xffffffff, 0)
                     for row, dtype in zip(block.variables[-4:], ("TIMERBLOCK", "TIMERBLOCK", "EXAMPLELIB.RISE", "LADDERBLOCK")))
@@ -176,17 +187,26 @@ def run(output):
                 assert block.line_count == 3 and block.line_table_count == 1
                 assert st.parse((project / "MAIN.ST").read_bytes()).source == source.read_bytes()
                 current = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
-                assert len(current.rows) == 3
+                assert len(current.rows) == 5
                 first = current.rows[0]
                 assert current.raw[first.start:first.end] == old_global.raw[old_row.start:old_row.end]
-                for row in current.rows[1:]:
+                for row in current.rows[1:3]:
                     assert row.type_code == 64 and row.initial_raw == ""
+                for row in current.rows[1:]:
                     assert row.metadata["address_raw"] == 0xFFFFFFFF
+                assert [(row.type_code, row.type_text, row.initial_raw) for row in current.rows[3:]] == [
+                    (32, "", "1.250000"), (2048, "STRING<20>", '"Global text"')]
+                assert [row.document()["data_type"] for row in current.rows[3:]] == ["REAL", "STRING<20>"]
+                assert current.rows[-1].metadata["string_descriptor_code_raw"] == 2048
                 full_fc = fc.parse((project / "Calc.FC").read_bytes())
                 empty_fc = fc.parse((project / "EmptyCalc.FC").read_bytes())
-                assert len(full_fc.variables) == 3 and len(empty_fc.variables) == 2
+                assert len(full_fc.variables) == 3 and len(empty_fc.variables) == 4
                 assert full_fc.variables[-1].fields == (3, 0xffffffff, 0)
                 assert full_fc.source == source.read_bytes()
+                assert empty_fc.source == old_empty_fc.source
+                assert empty_fc.raw[empty_fc.inner_offset - 4:] == old_empty_fc.raw[old_empty_fc.inner_offset - 4:]
+                assert [(row.type_code, row.type_text, row.fields) for row in empty_fc.variables[-2:]] == [
+                    (32, "", (2, 0xffffffff, 0)), (2048, "STRING<128>", (3, 0xffffffff, 0))]
                 assert full_fc.line_count == 3 and full_fc.line_table_count == old_fc.line_table_count == 1
                 old_tail = old_fc.payload_offset + old_fc.payload_length
                 new_tail = full_fc.payload_offset + full_fc.payload_length
@@ -280,7 +300,8 @@ def run(output):
                     "--expect-receipt-sha256", digest(receipt), "--backup-root", output / ("restore-" + label), "--experimental")
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
-                    fb_nine_variables=True, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    fb_variable_count=11, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    real_string_scalars_verified=True,
                     local_and_global_library_ld_instances=True,
                     fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,

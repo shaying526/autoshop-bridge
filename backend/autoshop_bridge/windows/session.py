@@ -10,6 +10,7 @@ from pathlib import Path
 from autoshop_bridge.windows.editor import Win32Editor
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats.native import parse
+from autoshop_bridge.formats.scalar_types import descriptor, STRING_DEFAULT_LENGTH
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import (
     assert_hash,
@@ -36,6 +37,108 @@ COLUMNS = {
 }
 FC_COLUMNS = {key: value for key, value in COLUMNS.items()
               if key not in ("initial_raw", "initial_value", "retention")}
+
+
+def confirm_string_length(adapter, length, expected_default=128):
+    """Confirm only the observed normal STRING length dialog, exactly once.
+
+    This can resume a known in-flight type selection. It does not open a cell,
+    select a type, save, retry a command or handle any other modal prompt.
+    Supported numeric limits are owned by the IDE, not a guessed whitelist.
+    """
+    if (type(length) is not int or length <= 0 or type(expected_default) is not int
+            or expected_default <= 0):
+        raise BridgeError("STRING length requires an explicit positive integer.")
+    a=adapter
+    for name,args,result in (
+            ('GetWindow',[a.types.HWND,ctypes.c_uint],a.types.HWND),
+            ('GetDlgCtrlID',[a.types.HWND],ctypes.c_int)):
+        function=getattr(a.user,name)
+        if hasattr(function,'argtypes'):
+            function.argtypes=args;function.restype=result
+
+    def identity():
+        if (not a.user.IsWindow(a.main) or a.window_pid(a.main)!=a.pid
+                or not a.is_autoshop(a.pid) or not a.title_matches(a.text(a.main))
+                or not a.user.IsWindow(a.program_window)
+                or a.window_pid(a.program_window)!=a.pid
+                or not a.user.IsChild(a.main,a.program_window)
+                or not a.program_title_matches(a.text(a.program_window))):
+            raise BridgeError("STRING dialog project/program identity changed.")
+
+    def dialogs():
+        found=[]
+        @a.callback_type
+        def visit(hwnd,unused):
+            if (a.window_pid(hwnd)==a.pid and a.user.IsWindowVisible(hwnd)
+                    and a.class_name(hwnd)=='#32770'):found.append(hwnd)
+            return True
+        if not a.user.EnumWindows(visit,0):
+            raise BridgeError("Cannot enumerate STRING modal windows.")
+        return found
+
+    def inspect(dialog):
+        identity()
+        if (dialogs()!=[dialog] or a.text(dialog)!='定义字符串'
+                or a.user.IsWindowEnabled(a.main)):
+            raise BridgeError("Only the exact observed STRING length modal is supported.")
+        owner=a.user.GetWindow(dialog,4)
+        seen=set()
+        while owner and owner!=a.main:
+            if owner in seen or len(seen)>=16 or a.window_pid(owner)!=a.pid:
+                raise BridgeError("STRING dialog owner chain differs.")
+            seen.add(owner);owner=a.user.GetWindow(owner,4)
+        if owner!=a.main:raise BridgeError("STRING dialog is not owned by the target project window.")
+        children=a.children(dialog)
+        expected={('Button',1):'确定',('Button',2):'取消',('Static',-1):'长度：',('Edit',3023):None}
+        controls={}
+        if len(children)!=len(expected):raise BridgeError("STRING dialog control layout differs.")
+        for child in children:
+            key=(a.class_name(child),a.user.GetDlgCtrlID(child))
+            if (key not in expected or key in controls or a.window_pid(child)!=a.pid
+                    or a.user.GetParent(child)!=dialog or not a.user.IsWindowVisible(child)
+                    or not a.user.IsWindowEnabled(child)
+                    or (expected[key] is not None and a.text(child)!=expected[key])):
+                raise BridgeError("STRING dialog control identity/text/state differs.")
+            controls[key]=child
+        return controls
+
+    identity();current=dialogs()
+    if len(current)!=1:raise BridgeError("Expected exactly one target STRING length modal.")
+    dialog=current[0];controls=inspect(dialog);edit=controls[('Edit',3023)]
+    if a.control_text(edit)!=str(expected_default):
+        raise BridgeError("STRING dialog length differs from the expected baseline.")
+    limit=a.window_message(edit,0x00D5)  # EM_GETLIMITTEXT; actual control constraint.
+    desired=str(length)
+    if limit<=0 or len(desired)>limit:raise BridgeError("STRING length text exceeds the actual edit control limit.")
+    if length!=expected_default:
+        payload=ctypes.create_unicode_buffer(desired)
+        if not a.window_message(edit,0x000C,0,ctypes.addressof(payload)):
+            raise BridgeError("STRING length edit rejected text.")
+    if inspect(dialog)!=controls or a.control_text(edit)!=desired:
+        raise BridgeError("STRING dialog changed before confirmation.")
+    a.post(dialog,0x0111,1)  # Normal IDOK, one dispatch; never repeat after timeout.
+    deadline=time.monotonic()+4
+    while time.monotonic()<deadline:
+        identity();current=dialogs()
+        if any(hwnd!=dialog for hwnd in current):
+            raise BridgeError("Unexpected modal appeared after STRING confirmation; do not repeat.")
+        if a.user.IsWindow(dialog):
+            if (a.window_pid(dialog)!=a.pid or a.class_name(dialog)!='#32770'
+                    or a.text(dialog)!='定义字符串'):
+                raise BridgeError("STRING confirmation left a changed/unknown modal; do not repeat.")
+        # IDOK can enable the frame before DestroyWindow completes. The exact
+        # old dialog may retire asynchronously; its child controls and enabled
+        # state are no longer a pre-confirmation baseline. No further message
+        # is sent. Any other visible modal above still stops immediately.
+        if (a.user.IsWindowEnabled(a.main) and not current
+                and (not a.user.IsWindow(dialog) or not a.user.IsWindowVisible(dialog))):break
+        time.sleep(0.05)
+    else:
+        raise BridgeError("STRING confirmation timed out; it may have completed, do not repeat.")
+    a.validate_main();a.assert_no_cell_edit()
+    return dict(status='string_length_confirmed',length=length,dialog=dialog,
+                confirmation_dispatched_once=True,rows=a.grid())
 
 
 def resolve_target(project, program, *, registration_receipt=None, live_observation=None):
@@ -90,6 +193,11 @@ def assert_native_variables(container, rows):
     for index, (var, row) in enumerate(zip(container.variables, rows)):
         expected = var.as_dict(index)
         for field in ("name", "category", "data_type", "comment"):
+            string_descriptor=descriptor(var.type_text) if var.type_code==2048 else None
+            if (field=='data_type' and string_descriptor is not None
+                    and string_descriptor.string_length==STRING_DEFAULT_LENGTH
+                    and var.type_text==string_descriptor.canonical and row[field]=='STRING'):
+                continue  # The observed grid shows the base type, not capacity.
             if (field == "data_type" and var.type_code == 256
                     and isinstance(expected[field], str)
                     and row[field] == expected[field].upper()):
@@ -98,7 +206,7 @@ def assert_native_variables(container, rows):
                 raise BridgeError(
                     "FB editor/native variable {} differs: {}.".format(index + 1, field)
                 )
-        if hasattr(var, "initial_raw") and var.type_code in (1, 4, 16) and var.initial_raw != row["initial_raw"]:
+        if hasattr(var, "initial_raw") and var.type_code in (1, 4, 16, 32, 2048) and var.initial_raw != row["initial_raw"]:
             raise BridgeError("FB editor/native scalar initial value differs.")
 
 
@@ -361,6 +469,9 @@ class WindowsSession(Win32Editor):
         edits retain set_cell and its immediate full-table verification.
         """
         grid, control = self.begin_cell(variable, field, expected)
+        scalar=descriptor(value) if field=='data_type' else None
+        string_type=scalar is not None and scalar.string_length is not None
+        selected_value='STRING' if string_type else value
         if field in ("data_type", "category"):
             count = self.window_message(control, 0x0146)  # CB_GETCOUNT
             if not 1 <= count <= 4096:
@@ -375,31 +486,39 @@ class WindowsSession(Win32Editor):
                 choices.append(text.value)
             if field == "category" and choices != ["VAR", "IN", "OUT", "INOUT"]:
                 raise BridgeError("Unsupported FB category selector choices.")
-            if choices.count(value) != 1:
+            if choices.count(selected_value) != 1:
                 raise BridgeError("Requested data type is unavailable or ambiguous.")
-            self.window_message(control, 0x014E, choices.index(value))
-        elif field == "initial_value" and value in ("ON", "OFF"):
+            self.window_message(control, 0x014E, choices.index(selected_value))
+        elif field == "initial_value":
+            cls=self.class_name(control)
             count = self.window_message(control, 0x0146)  # CB_GETCOUNT
-            if count != 2:
-                raise BridgeError("Unsupported BOOL initial-value selector.")
-            choices = []
-            for i in range(count):
-                length = self.window_message(control, 0x0149, i)  # CB_GETLBTEXTLEN
-                if length > 32:
-                    raise BridgeError("Unexpected BOOL selector item.")
-                text = ctypes.create_unicode_buffer(length + 1)
-                self.window_message(
-                    control, 0x0148, i, ctypes.addressof(text)
-                )  # CB_GETLBTEXT
-                choices.append(text.value)
-            if set(choices) != {"ON", "OFF"}:
-                raise BridgeError("Unsupported BOOL initial-value choices.")
-            self.window_message(control, 0x014E, choices.index(value))  # CB_SETCURSEL
+            limit=self.window_message(control,0x00D5)  # EM_GETLIMITTEXT, read-only evidence.
+            self.last_initial_editor_profile=dict(class_name=cls,combo_count=count,text_limit=limit)
+            atl=isinstance(cls,str) and cls.startswith('ATL:')
+            text_editor=cls=='Edit' or (atl and count in (0,-1,0xffffffff,0xffffffffffffffff))
+            if text_editor:
+                self.last_initial_editor_profile['kind']='text'
+                payload=ctypes.create_unicode_buffer(value)
+                if not self.window_message(control,0x000C,0,ctypes.addressof(payload)):
+                    raise BridgeError('Inline initializer text editor rejected text.')
+            elif (atl or cls=='ComboBox') and count==2:
+                choices=[]
+                for i in range(count):
+                    length=self.window_message(control,0x0149,i)
+                    if not 0<=length<=32:raise BridgeError('Unexpected BOOL initializer selector item.')
+                    text=ctypes.create_unicode_buffer(length+1)
+                    self.window_message(control,0x0148,i,ctypes.addressof(text));choices.append(text.value)
+                if set(choices)!={'ON','OFF'} or value not in choices:
+                    raise BridgeError('Unsupported initializer selector choices/value.')
+                self.last_initial_editor_profile.update(kind='bool_combo',choices=choices)
+                self.window_message(control,0x014E,choices.index(value))
+            else:
+                raise BridgeError('Unsupported initializer editor class or selector profile.')
         else:
             payload = ctypes.create_unicode_buffer(value)
             if not self.window_message(control, 0x000C, 0, ctypes.addressof(payload)):
                 raise BridgeError("Inline editor rejected text.")
-        if self.control_text(control) != value:
+        if self.control_text(control) != selected_value:
             raise BridgeError("Inline editor text readback differs.")
         if getattr(self, "columns", COLUMNS) == FC_COLUMNS and field == "comment":
             # The observed FC comment editor is multiline: Enter inserts CRLF.
@@ -409,6 +528,32 @@ class WindowsSession(Win32Editor):
         else:
             self.post(control, 0x100, 13)
             self.post(control, 0x101, 13)
+        if string_type:
+            deadline=time.monotonic()+4
+            while time.monotonic()<deadline:
+                if (self.window_pid(self.main)!=self.pid or not self.is_autoshop(self.pid)
+                        or not self.title_matches(self.text(self.main))):
+                    raise BridgeError('STRING selection project identity changed; do not repeat.')
+                if not self.user.IsWindowEnabled(self.main):
+                    # MFC disables the frame before publishing its modal.
+                    # Observe within this same deadline; do not resubmit the
+                    # type or mistake that brief zero-dialog state for failure.
+                    dialogs=[]
+                    @self.callback_type
+                    def visit(hwnd,unused):
+                        if (self.window_pid(hwnd)==self.pid and self.user.IsWindowVisible(hwnd)
+                                and self.class_name(hwnd)=='#32770'):dialogs.append(hwnd)
+                        return True
+                    if not self.user.EnumWindows(visit,0):
+                        raise BridgeError('Cannot enumerate STRING selection modal; do not repeat.')
+                    if dialogs:
+                        result=confirm_string_length(self,scalar.string_length,STRING_DEFAULT_LENGTH)
+                        self.last_string_length_confirmation=dict(
+                            variable=variable,requested_type=value,native_type=scalar.canonical,
+                            length=result['length'],dialog=result['dialog'],confirmation_dispatched_once=True)
+                        return
+                time.sleep(0.05)
+            raise BridgeError('STRING selection did not expose the observed length dialog; inspect the partial buffer, do not repeat.')
         self.wait_until(
             lambda: not self.user.IsWindowVisible(control), "variable edit commit"
         )

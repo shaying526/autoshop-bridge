@@ -4,7 +4,8 @@ import copy
 from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError
-from autoshop_bridge.formats.fb import parse
+from autoshop_bridge.formats.fb import parse, Reader
+from autoshop_bridge.formats.scalar_types import STRING_DEFAULT_LENGTH
 from autoshop_bridge.formats.tables import identifier
 from autoshop_bridge.projects import types as type_context
 from autoshop_bridge.projects.identifiers import precheck_addition_names
@@ -38,9 +39,15 @@ def validate_value(field, value, row):
         return
     if field != "initial_value":
         raise BridgeError(
-            "Only comment and BOOL/INT/DINT initial_value edits are supported; other fields are pending."
+            "Only comment and supported scalar initial_value edits are implemented; other fields are pending."
         )
     if row["data_type"] == "BOOL" and value in ("OFF", "ON"):
+        return
+    scalar=type_context.descriptor(row["data_type"])
+    if scalar is not None and scalar.code in (32,2048):
+        # The native initializer is an explicit source string. AutoShop/compiler owns
+        # expression and numeric semantics; retain the bounded representation
+        # checks above and require exact full-field readback after editing.
         return
     if row["data_type"] in ("INT", "DINT"):
         bits = 16 if row["data_type"] == "INT" else 32
@@ -55,7 +62,7 @@ def validate_value(field, value, row):
         ):
             return
     raise BridgeError(
-        "Unsupported scalar initial value/type; use BOOL OFF/ON or a canonical INT/DINT."
+        "Unsupported scalar initial value/type; BOOL uses OFF/ON, INT/DINT use canonical integers, REAL/STRING retain the explicit string."
     )
 
 
@@ -121,9 +128,8 @@ def validate_changes(document, rows, types=None):
                 or op["category"] not in ("VAR", "IN", "OUT", "INOUT")
             ):
                 raise BridgeError("Invalid or duplicate variable definition.")
-            code = type_context.SCALARS.get(
-                op["data_type"], types.get(op["data_type"], {}).get("code")
-            )
+            scalar=type_context.descriptor(op['data_type'])
+            code = scalar.code if scalar is not None else types.get(op['data_type'],{}).get('code')
             if (
                 code is None
                 or (code in (256, "ide_resolved") and op["category"] != "VAR")
@@ -139,7 +145,7 @@ def validate_changes(document, rows, types=None):
             row = {
                 "row": str(len(planned) + 1),
                 "name": op["name"],
-                "data_type": op["data_type"],
+                "data_type": scalar.canonical if scalar is not None else op["data_type"],
                 "category": op["category"],
                 "initial_value": op["initial_value"],
                 "initial_raw": op["initial_value"],
@@ -163,6 +169,26 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
     old, new = parse(before), parse(after)
     if old.source != new.source:
         raise BridgeError("Variable save unexpectedly changed FB body.")
+    # Normal IDE scalar additions retain these complete bytes (including the
+    # embedded line table). Parsed source/variables alone cannot authenticate
+    # opaque envelope fields or the native boundary after the variable records.
+    def header_count_offset(raw,obj):
+        reader=Reader(raw,obj.variable_header_offset,obj.inner_offset-4)
+        reader.string();reader.u32()
+        return reader.pos
+    old_count=header_count_offset(before,old);new_count=header_count_offset(after,new)
+    if before[:old_count]!=after[:new_count]:
+        raise BridgeError('Variable save changed the opaque FB envelope/header.')
+    if before[old.inner_offset-4:]!=after[new.inner_offset-4:]:
+        raise BridgeError('Variable save changed the protected FB inner metadata or tail.')
+
+    def record_regions(raw,var):
+        reader=Reader(raw,var.offset,var.end)
+        reader.string();reader.u32();reader.string()
+        comment_start=reader.pos;reader.string();initial_start=reader.pos
+        reader.string();tail_start=reader.pos
+        return (raw[var.offset:comment_start],raw[comment_start:initial_start],
+                raw[initial_start:tail_start],raw[tail_start:var.end])
     changes = {}
     added = []
     additions = {}
@@ -177,6 +203,11 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
             "Saved variable ordering/names differ from requested changes."
         )
     for before_row, after_row in zip(old.variables, new.variables):
+        left,right=record_regions(before,before_row),record_regions(after,after_row)
+        if (left[0]!=right[0] or left[3]!=right[3]
+                or ((before_row.name,'comment') not in changes and left[1]!=right[1])
+                or ((before_row.name,'initial_value') not in changes and left[2]!=right[2])):
+            raise BridgeError('Variable save changed unrequested native record bytes: '+before_row.name)
         for attr in ("type_text", "type_code", "name", "fields"):
             if getattr(before_row, attr) != getattr(after_row, attr):
                 raise BridgeError(
@@ -194,9 +225,8 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
             raise BridgeError("Saved native variable initial value differs.")
     for var in new.variables[len(old.variables) :]:
         op = additions[var.name]
-        code = type_context.SCALARS.get(
-            op["data_type"], types.get(op["data_type"], {}).get("code")
-        )
+        scalar=type_context.descriptor(op['data_type'])
+        code = scalar.code if scalar is not None else types.get(op['data_type'],{}).get('code')
         if code == "ide_resolved":
             if var.type_code not in (64, 256):
                 raise BridgeError("Saved IDE named type has an unsupported native descriptor: "
@@ -210,14 +240,17 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
             initial = next(r for r in expected_rows if r["name"] == var.name)[
                 "initial_raw"
             ]
+        if code==256:
+            type_differs=var.type_text not in (op['data_type'],op['data_type'].upper())
+        elif code==64:
+            type_differs=var.type_text!=op['data_type']
+        elif code==2048:
+            type_differs=scalar is None or var.type_text!=scalar.type_text
+        else:
+            type_differs=var.type_text not in ('',op['data_type'])
         if (
             var.type_code != code
-            or (
-                var.type_text not in (op["data_type"], op["data_type"].upper())
-                if code == 256 else var.type_text != op["data_type"]
-                if code == 64
-                else var.type_text not in ("", op["data_type"])
-            )
+            or type_differs
             or var.fields
             != (
                 {"VAR": 0, "IN": 1, "OUT": 2, "INOUT": 3}[op["category"]],
@@ -290,7 +323,7 @@ def edit(
         ]
         context = (
             type_context.ide_catalog(project, requested, target.stem, target=target)
-            if any(name not in type_context.SCALARS for name in requested)
+            if any(type_context.descriptor(name) is None for name in requested)
             else dict(types={}, hashes={})
         )
         type_context.check(context)
@@ -336,7 +369,7 @@ def edit(
         )
         try:
             probe = next(
-                (r for r in current if r["data_type"] in type_context.SCALARS), None
+                (r for r in current if type_context.descriptor(r["data_type"]) is not None), None
             )
             deferred_selector = bool(requested and probe is None)
             if requested and current:
@@ -344,7 +377,7 @@ def edit(
                     choices = adapter.selector_choices(
                         probe["name"], "data_type", probe["data_type"]
                     )
-                    if any(choices.count(dtype) != 1 for dtype in requested):
+                    if any(choices.count(type_context.selector_name(dtype)) != 1 for dtype in requested):
                         raise BridgeError(
                             "Requested type is unavailable/ambiguous in the IDE selector."
                         )
@@ -385,7 +418,7 @@ def edit(
                         # type is missing, retain this known partial buffer and
                         # stop; never claim no modification or repeat the add.
                         choices = adapter.selector_choices(op['name'], 'data_type', 'BOOL')
-                        if any(choices.count(dtype) != 1 for dtype in requested):
+                        if any(choices.count(type_context.selector_name(dtype)) != 1 for dtype in requested):
                             raise BridgeError('Requested type is unavailable/ambiguous after first variable creation.')
                         observed = snapshot(adapter, target)
                         if (observed['variables'] != current or observed['source'] != before['source']
@@ -416,6 +449,12 @@ def edit(
                         actual = adapter.set_cell(
                             op["name"], "data_type", "BOOL", op["data_type"]
                         )
+                        scalar=type_context.descriptor(op['data_type'])
+                        if scalar is not None and scalar.code==2048:
+                            allowed_types=(scalar.canonical,'STRING') if scalar.string_length==STRING_DEFAULT_LENGTH else (scalar.canonical,)
+                            if actual[-1]['data_type'] not in allowed_types:
+                                raise BridgeError('STRING type/length selection returned an unexpected display type.')
+                            desired[-1]['data_type']=actual[-1]['data_type']
                         # V4.11.0.5 normalizes newly selected project FB names
                         # to uppercase. Accept only that observed spelling or
                         # the exact selector name; all other row fields remain

@@ -10,7 +10,8 @@ from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError, ConflictError
 from autoshop_bridge.formats.native import parse
-from autoshop_bridge.formats.tables import parse as parse_table, comment_display
+from autoshop_bridge.formats.tables import parse as parse_table, comment_display, TYPES
+from autoshop_bridge.formats.scalar_types import descriptor, STRING_DEFAULT_LENGTH
 from autoshop_bridge.projects.inventory import bounded_read, scan, select_project
 from autoshop_bridge.storage import create_backup, regular_file, writable_target, sha256, write_json_new, write_new
 from autoshop_bridge.windows.creation import WindowsNewSTDialog, mirror_state
@@ -21,6 +22,21 @@ SOURCE_SUFFIXES = {'.st', '.fb', '.fc', '.ld', '.stru', '.gvt', '.fbi'}
 def require(value, message):
     if not value:
         raise BridgeError('Object creation: ' + message)
+
+
+def _member_ui_type_matches(requested, actual):
+    scalar=descriptor(requested)
+    if scalar is None:return actual==requested
+    return (actual==scalar.canonical or
+            (scalar.string_length==STRING_DEFAULT_LENGTH and actual=='STRING'))
+
+
+def _member_native_type_matches(requested, actual):
+    scalar=descriptor(requested)
+    if scalar is None:return (actual.type_text or TYPES.get(actual.type_code))==requested
+    if actual.type_code!=scalar.code:return False
+    if scalar.string_length is not None:return actual.type_text==scalar.type_text
+    return actual.type_text in ('',scalar.canonical)
 
 
 def _saved_mirror_changed(mirror, before):
@@ -261,11 +277,20 @@ class WindowsObjectCreation:
                 a = WindowsTableSession(self.project, target.stem, 'stru', self.pid)
                 obj = parse_table(raw, 'stru'); rows = a.grid(); assert_native_table(obj, rows)
                 expected = plan['initial']['members']
-                actual = [dict(name=r.name, data_type=r.type_text or {1:'BOOL',4:'INT',16:'DINT'}.get(r.type_code), comment=comment_display(r.comment)) for r in obj.rows]
-                expected = [dict(row, comment=comment_display(row['comment'])) for row in expected]
+                actual = [dict(name=r.name, data_type=r.type_text or TYPES.get(r.type_code), comment=comment_display(r.comment)) for r in obj.rows]
+                expected_native = [dict(row, data_type=descriptor(row['data_type']).canonical
+                                        if descriptor(row['data_type']) is not None else row['data_type'],
+                                        comment=comment_display(row['comment'])) for row in expected]
+                native_matches=(obj.name==target.stem and actual==expected_native
+                                and all(_member_native_type_matches(member['data_type'],row)
+                                        for member,row in zip(expected,obj.rows)))
+                editor_matches=(len(rows)==len(expected) and all(
+                    row['name']==member['name'] and row['comment']==comment_display(member['comment'])
+                    and _member_ui_type_matches(member['data_type'],row['data_type'])
+                    for member,row in zip(expected,rows)))
                 result.update(saved=not a.dirty(), member_count=len(rows),
-                              native_readback_verified=obj.name == target.stem and actual == expected,
-                              editor_readback_verified=actual == expected)
+                              native_readback_verified=native_matches,
+                              editor_readback_verified=native_matches and editor_matches)
         except BridgeError as exc:
             result['readback_error'] = str(exc)
         return result
@@ -355,6 +380,11 @@ def initialize_default_member(adapter, before, member):
         identity = current[0]['name']
         desired = copy.deepcopy(current); desired[0][field] = value
         actual = adapter.set_cell(identity, field, old, value)
+        if field=='data_type':
+            require(isinstance(actual,list) and len(actual)==1 and isinstance(actual[0],dict)
+                    and _member_ui_type_matches(value,actual[0].get('data_type')),
+                    'Initial member data type/capacity display differs')
+            desired[0]['data_type']=actual[0]['data_type']
         require(actual == desired, 'Initial member full-row verification failed after ' + field)
         current = actual
     return current

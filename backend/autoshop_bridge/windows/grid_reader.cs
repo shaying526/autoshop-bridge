@@ -142,12 +142,19 @@ public static class BridgeGridReader {
    while(row<Rows && Cell(row,Columns.Count-1)!=""){
     string name=Cell(row,Key),full=Cell(row,Columns.Count-1),type=Cell(row,2),initial=Cell(row,3);
     int id,number;
-    bool scalar=type=="BOOL" || type=="INT" || type=="DINT";
+    bool stringType=type=="STRING" || Regex.IsMatch(type,@"^STRING<[1-9][0-9]*>$");
+    bool scalar=type=="BOOL" || type=="INT" || type=="DINT" || type=="REAL" || stringType;
     bool complex=!scalar && Regex.IsMatch(type,@"^[A-Za-z_][A-Za-z0-9_]*$") && Cell(row,4)=="...";
-    bool validInitial=type=="BOOL"?(initial=="OFF" || initial=="ON"):
+    // REAL initializers remain exact, bounded source strings. This reader
+    // proves complete declaration identity and hidden/display agreement; the
+    // IDE/compiler, rather than a second numeric parser, owns semantics.
+    bool realInitial=initial.Length<=4096 && !Regex.IsMatch(initial,@"[\x00-\x1f]");
+    bool validInitial=stringType?(initial.Length<=4096 && Cell(row,4).Length<=4096):
+     type=="BOOL"?(initial=="OFF" || initial=="ON"):
+     type=="REAL"?realInitial:
      int.TryParse(initial,out number) && (type!="INT" || (number>=short.MinValue && number<=short.MaxValue));
     if(names.Count>=4096 || name=="" || name.IndexOfAny(new char[]{'.','[',']'})>=0 || full!=name || !unique.Add(name) ||
-     Cell(row,0)!=row.ToString() || (!complex && (!scalar || !validInitial || Cell(row,4)!=initial)) ||
+     Cell(row,0)!=row.ToString() || (!complex && (!scalar || !validInitial || (!stringType && Cell(row,4)!=initial))) ||
      !Regex.IsMatch(Cell(row,10),@"^nBitLen:[1-9][0-9]*$") ||
      (Cell(row,5)!="不保持" && Cell(row,5)!="保持") || (Cell(row,6)!="私有" && Cell(row,6)!="公开") ||
      !int.TryParse(Cell(row,11),out id) || id<=0 || !ids.Add(id))throw new Exception("Incomplete/invalid appended live declaration");

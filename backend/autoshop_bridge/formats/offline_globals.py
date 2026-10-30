@@ -8,6 +8,7 @@ import struct
 
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import tables
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
@@ -63,7 +64,7 @@ def rebuild(raw, operations, structure_definitions=None):
             if not tables.identifier(op["name"]) or any(
                     row.name.casefold() == op["name"].casefold() for row in table.rows):
                 raise BridgeError("Invalid/duplicate GVT variable name.")
-            if op["data_type"] not in tables.ADD_TYPES:
+            if descriptor(op["data_type"]) is None:
                 name = op["data_type"]
                 if name not in definitions or op["initial_value"] is not None:
                     raise BridgeError("Structure add requires a known definition and null initializer.")

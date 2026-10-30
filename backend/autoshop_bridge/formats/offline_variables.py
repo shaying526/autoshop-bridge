@@ -10,12 +10,15 @@ from dataclasses import dataclass
 
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import fb, tables
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.formats.structure import comment_initializer
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
 PROFILE = "fb-flat-scalar-variables-candidate-v1"
-SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16}
+# This initializer grammar has separate evidence from direct scalar records.
+# Adding a scalar codec must not silently qualify new structure layouts.
+FLAT_STRUCTURE_CODES = frozenset((1, 4, 16))
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,10 @@ def _text(value):
 
 def _initial(code, value):
     _text(value)
+    if code == 2048:
+        # The observed STRING record uses the same native text field. Preserve
+        # its spelling; capacity/literal semantics are checked by AutoShop.
+        return
     row = tables.Row(0, 0, "", code, "", "", None, {}, {})
     tables.validate_value(row, "initial_value", value)
 
@@ -72,7 +79,7 @@ def flat_structure_initial(raw, name):
     if definition.name != name or not definition.rows:
         raise BridgeError("Expected the exact nonempty structure definition.")
     for index, row in enumerate(definition.rows):
-        if row.type_code not in SCALARS.values() or row.type_text not in (
+        if row.type_code not in FLAT_STRUCTURE_CODES or row.type_text not in (
             "", tables.TYPES.get(row.type_code)
         ):
             raise BridgeError("Only observed flat BOOL/INT/DINT structures are candidates.")
@@ -99,7 +106,8 @@ def _record(op, definitions):
     _text(dtype)
     if not isinstance(dtype, str) or not isinstance(category, str) or category not in fb.CATEGORIES.values():
         raise BridgeError("Unsupported FB type/category.")
-    code, type_text = SCALARS.get(dtype), ""
+    scalar = descriptor(dtype)
+    code, type_text = (scalar.code, scalar.type_text) if scalar else (None, "")
     initial = op["initial_value"]
     if code is None:
         if category not in ("VAR", "IN", "OUT", "INOUT") or dtype not in definitions or initial is not None:
@@ -140,7 +148,7 @@ def _record(op, definitions):
     elif category == "INOUT":
         if initial is not None:
             raise BridgeError("INOUT requires a null independent initializer.")
-        initial = "OFF" if code == 1 else "0"
+        initial = {1: "OFF", 4: "0", 16: "0", 32: "0.000000", 2048: ""}[code]
     else:
         _initial(code, initial)
     _text(op["comment"])

@@ -122,7 +122,7 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument('--kind', required=True, choices=('litest-fb', 'structure'))
     cmd.add_argument('--name', required=True)
     cmd.add_argument('--source-file', type=Path, help='UTF-8 initial FB body; required for litest-fb')
-    cmd.add_argument('--members-file', type=Path, help='JSON list of initial BOOL/INT/DINT members; required for structure')
+    cmd.add_argument('--members-file', type=Path, help='JSON list of initial scalar members (BOOL/INT/DINT/REAL/STRING or STRING<n>); required for structure')
     cmd.add_argument('--save-project', action='store_true', help='Explicitly save project registration after this new object; rejects dirty documents')
     cmd.add_argument('--pid', type=int)
     cmd.add_argument('--output', type=Path, help='New plan JSON path outside the native project')

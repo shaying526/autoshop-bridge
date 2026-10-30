@@ -6,11 +6,14 @@ from dataclasses import dataclass
 
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats.fb import Reader
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 
-TYPES = {1: "BOOL", 4: "INT", 16: "DINT"}  # 16 confirmed by STRU/GVT UI readback.
+TYPES = {1: "BOOL", 4: "INT", 16: "DINT", 32: "REAL"}
+# Fixed-width element layouts already observed in GVT ARRAY descriptors.
+# Standalone STRING has its own trailing descriptor, not this ARRAY profile.
 SCALAR_CODES = {1, 4, 16, 32}
-ADD_TYPES = {"BOOL": 1, "INT": 4, "DINT": 16}
+ADD_TYPES = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32}  # Legacy fixed-width enumeration; use descriptor for additions.
 UNALLOCATED_ADDRESS = 0xFFFFFFFF  # AutoShop's saved new-scalar address sentinel.
 
 
@@ -113,17 +116,17 @@ def addition(op, kind):
     fields = {"op", "name", "data_type", "comment"}
     if kind == "gvt":
         fields.add("initial_value")
+    scalar = descriptor(op.get("data_type"))
     if (
         set(op) != fields
-        or not isinstance(op.get("data_type"), str)
-        or op["data_type"] not in ADD_TYPES
+        or scalar is None
         or not identifier(op.get("name"))
     ):
         raise BridgeError(
-            "Add requires an exact valid name, BOOL/INT/DINT data_type, comment"
+            "Add requires an exact valid name, supported scalar data_type, comment"
             + (" and initial_value." if kind == "gvt" else ".")
         )
-    code = ADD_TYPES[op["data_type"]]
+    code = scalar.code
     probe = Row(0, 0, op["name"], code, "", "", None, {}, {})
     validate_value(probe, "comment", op["comment"])
     initial = op.get("initial_value")
@@ -143,6 +146,15 @@ def validate_value(row, field, value):
         )
     if field == "comment":
         return
+    if field == "initial_value" and row.type_code == 32:
+        # Native REAL initial values are stored as text. Preserve the caller's
+        # exact literal; AutoShop compilation, not Python float conversion,
+        # determines its PLC syntax and business meaning.
+        return
+    if field == "initial_value" and row.type_code == 2048:
+        # STRING initializers occupy the same bounded native text field. Keep
+        # exact caller text; do not derive byte capacity from the literal.
+        return
     if field == "initial_value" and row.type_code == 1 and value in ("ON", "OFF"):
         return
     if (
@@ -157,7 +169,7 @@ def validate_value(row, field, value):
         ):
             return
     raise BridgeError(
-        "Only comments and BOOL/INT/DINT scalar initial values can be changed."
+        "Only comments and supported scalar initial values can be changed."
     )
 
 
@@ -255,7 +267,7 @@ class Table:
                     raise BridgeError("Table row limit exceeded.")
                 if current.kind == "stru":
                     encoded = (
-                        string("")
+                        string(descriptor(op["data_type"]).type_text)
                         + struct.pack("<I", code)
                         + string(op["name"])
                         + string(op["comment"])
@@ -273,6 +285,11 @@ class Table:
                         + b"\xff\xfe\xff\0"
                         + struct.pack("<II", 0, 0)
                     )
+                    if code == 2048:
+                        # Independent normal GVT STRING save: the common row
+                        # is followed by its capacity-bearing type text and a
+                        # repeated STRING descriptor code. Not an ARRAY tail.
+                        encoded += string(descriptor(op["data_type"]).type_text) + struct.pack("<I", 2048)
                 pos = current.count_offset
                 result = (
                     result[:pos]
@@ -314,7 +331,7 @@ def gvt_rows(raw, reader, count):
     for _ in range(count):
         start, spans = reader.pos, {}
         code, related = reader.u32(), reader.u32()
-        if code not in SCALAR_CODES | {64, 128} or related != code:
+        if code not in SCALAR_CODES | {64, 128, 2048} or related != code:
             raise BridgeError("Unsupported GVT type descriptor.")
         name = read_string(reader, spans, "name")
         initial = read_string(reader, spans, "initial_value")
@@ -337,6 +354,13 @@ def gvt_rows(raw, reader, count):
             text = reader.string()
             if not text.isidentifier():
                 raise BridgeError("Invalid GVT structure reference.")
+        elif code == 2048:
+            text = reader.string()
+            scalar = descriptor(text)
+            repeated_code = reader.u32()
+            if scalar is None or scalar.code != 2048 or scalar.canonical != text or repeated_code != 2048:
+                raise BridgeError("Unsupported GVT STRING descriptor.")
+            metadata["string_descriptor_code_raw"] = repeated_code
         elif code == 128:
             marker = reader.take(1)
             prefix = [reader.u32() for _ in range(3)]

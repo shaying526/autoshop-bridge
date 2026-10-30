@@ -13,7 +13,7 @@ from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats.st import Container, MAX_NATIVE_SIZE, parse as parse_st
 
 PROFILE = "autoshop-fb-embedded-st-v1-experimental"
-BUILTIN_TYPES = {1: "BOOL", 4: "INT", 16: "DINT"}
+BUILTIN_TYPES = {1: "BOOL", 4: "INT", 16: "DINT", 32: "REAL"}
 CATEGORIES = {0: "VAR", 1: "IN", 2: "OUT", 3: "INOUT"}
 
 

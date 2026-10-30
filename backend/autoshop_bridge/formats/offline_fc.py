@@ -8,11 +8,12 @@ import struct
 
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import fc, tables
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
 PROFILE = "fc-scalar-add-unallocated-v1"
-SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16}
+SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32}
 CATEGORIES = {"VAR": 0, "IN": 1, "OUT": 2, "INOUT": 3}
 
 
@@ -46,13 +47,14 @@ def rebuild(raw, operations):
             raise BridgeError("Offline FC supports exact scalar add fields only.")
         for key in ("name", "data_type", "category", "comment"):
             _text(op[key])
+        scalar = descriptor(op["data_type"])
         if (not tables.identifier(op["name"]) or op["name"].casefold() in names
-                or op["data_type"] not in SCALARS or op["category"] not in CATEGORIES
+                or scalar is None or op["category"] not in CATEGORIES
                 or op["initial_value"] is not None):
-            raise BridgeError("FC additions require unique BOOL/INT/DINT declarations and initial_value=null.")
+            raise BridgeError("FC additions require unique supported scalar declarations and initial_value=null.")
         precheck_addition_names(dict(schema=1, operations=[op]))
         names.add(op["name"].casefold())
-        encoded.append(tables.string("") + struct.pack("<I", SCALARS[op["data_type"]])
+        encoded.append(tables.string(scalar.type_text) + struct.pack("<I", scalar.code)
                        + tables.string(op["name"]) + tables.string(op["comment"])
                        + struct.pack("<III", CATEGORIES[op["category"]], 0xFFFFFFFF, 0))
     if len(names) > 4096:

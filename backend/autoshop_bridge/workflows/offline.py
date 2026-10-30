@@ -23,6 +23,7 @@ from autoshop_bridge.formats.offline_source import (
     FC_ZERO_ROWS_V1, rebuild_zero_row_fc,
 )
 from autoshop_bridge.formats.offline_variables import rebuild_fb, FBInstanceType
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.projects import inventory, deletion_preflight
 from autoshop_bridge.projects.offline_guard import exclusive_hcp, OfflineProjectUnavailable, error_code
 from autoshop_bridge.projects.identifiers import precheck_addition_names, require_new_identifier
@@ -410,7 +411,7 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
                      for op in entry.get("variable_operations", [])
                      if isinstance(op, dict) and op.get("op") == "add"
                      and isinstance(op.get("data_type"), str)
-                     and op["data_type"] not in fb.BUILTIN_TYPES.values()}
+                     and descriptor(op["data_type"]) is None}
     for dtype in sorted(requested_fbs):
         matches = [(name, row) for name, row in manifest["registered"].items()
                    if row["state"] == "present" and Path(name).suffix.lower() == ".fb"

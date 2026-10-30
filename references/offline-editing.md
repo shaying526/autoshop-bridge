@@ -1,22 +1,24 @@
 # 关闭工程后的离线编辑
 
-s22限定原生验收完成：新增独立显式项目登记基线与FC限定离线正文路径。未知HCPP头尾不改，基线另见[调用与失效规则](project-registration.md)；FC写正文保留完整旧行表，不重建LF行表。本页为s22，本轮21:03:55组合0错误，第三项追加和恢复均完成；最终21:11:23及恢复21:16:23均0错误，14根原生exact、空表正式回读和干净关闭通过。
+s23两模式REAL/STRING限定原生验收及恢复完成，完整回归、包校验、安装及发布仍待；当前指定安装和GitHub仍为s22，证据见[本批报告](validation.md)。新增JSON见下文，旧安装不能仅凭CLI1.03取得新类型能力。
 
-方法一库/已登记LD实例新增已完成本轮限定验收：单项及批量正式offline写入、重开9声明/74实例及全文完整回读，2026-10-29 19:49:05编译0错误；恢复原6/71项后19:52:35再次0错误并完整回读、干净关闭。59份根原生源全部与本轮起点逐字节相同，生成物差量另记，未新增工程副本。本说明随s21完整包提供。
+s22限定原生验收完成：新增独立显式项目登记基线与FC限定离线正文路径。未知HCPP头尾不改，基线另见[调用与失效规则](project-registration.md)；FC写正文保留完整旧行表，不重建LF行表。以下为s22既有证据：21:03:55组合0错误，第三项追加和恢复均完成；最终21:11:23及恢复21:16:23均0错误，14根原生exact、空表正式回读和干净关闭通过。
+
+方法一库/已登记LD实例新增已完成本轮限定验收：单项及批量正式offline写入、重开9声明/74实例及全文完整回读，2026-10-29 19:49:05编译0错误；恢复原6/71项后19:52:35再次0错误并完整回读、干净关闭。59份根原生源全部与本轮起点逐字节相同，生成物差量另记，未新增工程副本。该能力随s21已交付。
 
 s17补齐已登记LiteST FB内部VAR的项目FB实例新增，含空表首项和批量追加。使用下文原offline系列及完整保护，详见[内部实例专项](validation.md)。
 
 s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局另待；未知HCPP的默认strict不变，s22可显式使用独立项目登记基线，不靠镜像放权。
 
 整理方式：AI 根据实现与独立副本验证整理  
-当前状态：s22登记基线及FC限定路径、第三项追加、恢复和原生审计通过；原生验收、完整回归及完整包通过；安装/发布按本轮交付记录核对  
-最后更新：2026-10-29
+当前状态：s23 REAL/STRING限定原生验收及恢复完成，完整回归及交付待完成；当前安装和发布仍为s22  
+最后更新：2026-10-30
 
 offline系列处理已创建并登记的ST、LiteST FB、ST型FC、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
 
 ## 命令与路径
 
-FC标量声明编码已纳入s11（[报告](validation.md)），目标为已登记并严格可解析的ST型FC；新增支持BOOL/INT/DINT及VAR/IN/OUT/INOUT，initial_value必须null。示例：`{"file":"CalcDemo.FC","variable_operations":[{"op":"add","name":"inputValue","category":"IN","data_type":"INT","initial_value":null,"comment":"Input"}]}`。add不与delete混用，不支持set、复杂类型或返回类型；s22可另带source_file，但必须满足下节独立正文profile。三尾字段声明记录不套FB初值/保持格式；未请求正文时完整原正文及行表保持，不靠新增变量修复旧滞后表。闭工程、直接HCP、全部基线/唯一备份和完整回读保护保持。
+FC原BOOL/INT/DINT编码已随s11交付（[报告](validation.md)），s23开发增加的REAL/STRING见下节。目标为已登记并严格可解析的ST型FC；VAR/IN/OUT/INOUT均要求initial_value:null。示例：`{"file":"CalcDemo.FC","variable_operations":[{"op":"add","name":"inputValue","category":"IN","data_type":"INT","initial_value":null,"comment":"Input"}]}`。add不与delete混用，不支持set、数组/结构等复杂类型或返回类型；s22可另带source_file，但必须满足独立正文profile。三尾字段声明记录不套FB初值/保持格式；未请求正文时完整原正文及行表保持，不靠新增变量修复旧滞后表。闭工程、直接HCP、全部基线/唯一备份和完整回读保护保持。
 
 以下变量均由本次任务提供，使用绝对路径。bridge指向autoshop_bridge_cli.py。可从其他工作目录调用。
 
@@ -34,6 +36,59 @@ exported冻结直接HCP、所有现存登记文件和额外原生文件。没有
 
 checked已做正文、格式、类型和命名预检；built仅生成候选。apply核对外部plan摘要、全部基线，再从冻结请求完整重建候选并逐字节比较。所有唯一备份必须先于首写完成且回读通过；写后完整回读并检查非目标文件。applied只证明磁盘阶段，重新加载、软件保存和编译分别验收。
 
+## REAL与STRING新增（s23开发）
+
+沿用上述export/check/build/apply，不传profile开关，也不编辑只读variables.json。REAL和STRING是直接标量声明，继续保留原BOOL/INT/DINT规则和每种原生容器的独立布局：
+
+| 目标 | 请求中的initial_value |
+| --- | --- |
+| FB VAR/IN/OUT | 显式原文字符串；REAL如`"1.250000"`，STRING默认空原生串用`""` |
+| FB INOUT | null；正常IDE已观察REAL原生默认`0.000000`、STRING空原生默认串 |
+| FC VAR/IN/OUT/INOUT | 一律null；FC本身没有独立初值/保持列 |
+| STRU成员 | 不带initial_value或category字段 |
+| GVT变量 | 显式原文字符串，不带category；地址由IDE/编译分配 |
+
+`data_type:"STRING"`使用本机已观察默认128，等价原生参数`STRING<128>`；`STRING<20>`等明确指定容量。实际编辑器对默认128可显示裸STRING，明确20显示STRING<20>；窗口文字与原生参数分别核对，不能仅凭裸显示断言长度未设置。GVT的nBitLen是界面显示信息，不是给写入器增加的字段。
+
+REAL候选保存调用者原文，不用Python float转换或规范化；语法、引用、容量和业务语义交调用AI与AutoShop。非空STRING正常实测为含双引号的字面，JSON要保留这些引号：`"initial_value":"\"Bridge text\""`。工具不自动添加引号或按容量截断内容；编辑器自身产生的显示/保存结果另作完整回读。
+
+以下四个目标和名称为示例，替换为本次准确登记对象。两个类型都支持FB/FC四类别；与正常初值字段不同，INOUT/FC的null表示沿已观察默认处理：
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"rLocal","category":"VAR","data_type":"REAL","initial_value":"1.250000","comment":"Real local"},
+    {"op":"add","name":"sLocal","category":"VAR","data_type":"STRING","initial_value":"\"Bridge text\"","comment":"Text local"},
+    {"op":"add","name":"rInput","category":"IN","data_type":"REAL","initial_value":"0.000000","comment":"Real input"},
+    {"op":"add","name":"sInput","category":"IN","data_type":"STRING<20>","initial_value":"","comment":"Text input"},
+    {"op":"add","name":"rOutput","category":"OUT","data_type":"REAL","initial_value":"0.000000","comment":"Real output"},
+    {"op":"add","name":"sOutput","category":"OUT","data_type":"STRING<20>","initial_value":"","comment":"Text output"},
+    {"op":"add","name":"rReference","category":"INOUT","data_type":"REAL","initial_value":null,"comment":"Real reference"},
+    {"op":"add","name":"sReference","category":"INOUT","data_type":"STRING<20>","initial_value":null,"comment":"Text reference"}
+  ]},
+  {"file":"CalcDemo.FC","variable_operations":[
+    {"op":"add","name":"rLocal","category":"VAR","data_type":"REAL","initial_value":null,"comment":"Real local"},
+    {"op":"add","name":"sLocal","category":"VAR","data_type":"STRING","initial_value":null,"comment":"Text local"},
+    {"op":"add","name":"rInput","category":"IN","data_type":"REAL","initial_value":null,"comment":"Real input"},
+    {"op":"add","name":"sInput","category":"IN","data_type":"STRING<20>","initial_value":null,"comment":"Text input"},
+    {"op":"add","name":"rOutput","category":"OUT","data_type":"REAL","initial_value":null,"comment":"Real output"},
+    {"op":"add","name":"sOutput","category":"OUT","data_type":"STRING<20>","initial_value":null,"comment":"Text output"},
+    {"op":"add","name":"rReference","category":"INOUT","data_type":"REAL","initial_value":null,"comment":"Real reference"},
+    {"op":"add","name":"sReference","category":"INOUT","data_type":"STRING<20>","initial_value":null,"comment":"Text reference"}
+  ]},
+  {"file":"Data.stru","variable_operations":[
+    {"op":"add","name":"rValue","data_type":"REAL","comment":"Real member"},
+    {"op":"add","name":"sLabel","data_type":"STRING<20>","comment":"Text member"}
+  ]},
+  {"file":"Globals.gvt","variable_operations":[
+    {"op":"add","name":"grValue","data_type":"REAL","initial_value":"1.250000","comment":"Global real"},
+    {"op":"add","name":"gsLabel","data_type":"STRING<20>","initial_value":"\"Global text\"","comment":"Global text"}
+  ]}
+]}
+```
+
+正文/调用实参由AI显式组织，需要时按原source_file机制同批提交；本接口不自动更新业务引用。新声明不复制旧分配地址或旧缓存，原记录、完整正文/行表及非目标文件继续保护。直接新增REAL/STRING成员不扩大原扁平BOOL/INT/DINT结构初始化profile：含这些新成员的结构默认串生成、嵌套/值初始化、ARRAY新增和STRING数组仍另待，不套用本节标量编码。
+
 ## FC正文增删行（s22限定profile）
 
 使用原offline系列，不给旧build/apply加参数，不传profile开关。请求可仅改正文，也可与已支持标量新增或独立delete目标组织；add/delete仍不混用。正文是UTF-8无BOM，source_file相对changes.json解析：
@@ -46,7 +101,7 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 
 输出可能滞后，这不是已刷新行表；不能在同一旧工作目录继续下一次写入。由正常IDE处理后重新读取和export，只有真实重新取得匹配基线才继续此文件路径，不保证一次保存便使行表匹配。原本已滞后、compact/未知布局及非零未知字段拒绝，`offline_unsupported_fc_row_metadata`报告line、row_index、field、value、byte_offset、profile、reason，计数不匹配时另有expected；不要清零、压成单行或手造新行表绕过。
 
-本轮该FC路径与未知HCPP显式项目基线的声明编辑、FB/结构创建及空FBI两项已组合编译0错误；第三项与恢复/打包尚未完成，不据此宣称任意FC行元数据均支持。
+该s22路径已与未知HCPP显式项目基线的声明编辑、FB/结构创建及FBI追加完成组合/恢复0错误编译并交付；不据此宣称s23类型验收已完成或任意FC行元数据均支持。
 
 ## 库与已登记LD实例（s21）
 
@@ -163,7 +218,7 @@ checked已做正文、格式、类型和命名预检；built仅生成候选。ap
 
 file为登记中准确的相对路径。source_file相对changes.json目录解析，为UTF-8无BOM正文，不相对当前工作目录。禁止绝对成员路径、目录逃逸和链接。不修改变量时省略variable_operations；不修改正文时省略source_file。支持1–100目标；FB/GVT每目标1–32变量操作。正文上限1000行（LF+1，含末尾空行）。同一FB先构建变量候选，再处理正文。
 
-FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；全空、全非空和混合空/非空成员注释采用正常IDE已观察的默认串。仅有注释的成员输出键值，分隔符按原成员位置保留；末成员为空时可能保留尾随`, `，不trim或补空注释。V4.11.0.5 实际保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续明确报未实现。嵌套、数组、STRING新增profile仍待。set仅既有注释或标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。既有全有/全无注释VAR的文件覆盖/重开已完成；混合注释的8条完整IDE记录与新候选逐字节相同，本批组合验收另记结果。
+FB add字段如上。VAR/IN/OUT的BOOL/INT/DINT初值为OFF/ON或规范十进制字符串，INOUT必须null；s23开发REAL/STRING的直接声明规则及JSON见上节。结构VAR/IN/OUT/INOUT要求已登记、非空、扁平BOOL/INT/DINT定义及null初值；全空、全非空和混合空/非空成员注释采用正常IDE已观察的默认串。仅有注释的成员输出键值，分隔符按原成员位置保留；末成员为空时可能保留尾随`, `，不trim或补空注释。V4.11.0.5 实际保存确认ASCII `=`、`#`原样编码、不转义，原注释逐字保留；ASCII `(`、`)`、`,`、`:`仍未验证，继续明确报未实现。嵌套、数组及含REAL/STRING成员的结构初始化profile仍待。set仅既有注释或支持标量初值，精确字段为op/name/field/expected/value；默认已验范围不包含类别/类型修改。既有全有/全无注释VAR的文件覆盖/重开已完成；混合注释的8条完整IDE记录与新候选逐字节相同，本批组合验收另记结果。
 
 开发CLI已接入FB/FC/GVT可删至空、结构保留至少一成员的明确删除：variable_operations使用op/name/expected_record_sha256三字段的delete项，不与add/set混用。按用户原则不查引用/调用/类型使用者，不因其他LD/FBI及内嵌登记未解析而阻断，不级联；对象身份、全部基线/备份、候选重建及完整回读保护保留。FB可显式附source_file修正文；s22的FC删除也可带source_file，但须满足匹配全零输入/完整保留旧行表的独立profile。FBI非空结果删除已接入CLI并实际保存验证，方法一apply/重开回读70项及恢复71项已验证，00:40:05恢复编译0错误；FBI严格profile删空已补齐，空表首项/第二项由instances-editor-add实现；限定FBI离线新增见s18段落，任意容器构造仍未实现；FB/FC/GVT删空两种模式已保存/回读验收，STRU末项菜单灰色，删除扩展分发状态以包清单为准。四目标磁盘apply/restore/reapply及重开完整回读已通过，故意保留正文引用时编译报预期未定义变量；四目标恢复后00:09:32全部编译0错误，后续00:25:28恢复编译0错误及最终窗口回读已通过，见[删除专页](declaration-editing.md)。
 

@@ -1,10 +1,12 @@
 """Windows adapter for native structure/global variable table documents."""
 
 import copy
+import re
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.windows.editor import EditorState
 from autoshop_bridge.windows.session import WindowsSession
 from autoshop_bridge.formats.tables import TYPES, UNALLOCATED_ADDRESS, comment_display
+from autoshop_bridge.formats.scalar_types import descriptor, STRING_DEFAULT_LENGTH
 
 STRUCT_COLUMNS = dict(
     row="序号", name="成员变量名", data_type="数据类型", comment="注释", id="ID"
@@ -66,13 +68,17 @@ def assert_native_table(obj, rows):
                 "Table editor/native name or comment differs: {}.".format(native.name)
             )
         dtype = native.type_text or TYPES.get(native.type_code)
-        if native.type_code != 128 and dtype and dtype != ui["data_type"]:
+        string_descriptor=descriptor(native.type_text) if native.type_code==2048 else None
+        string_display=(string_descriptor is not None and string_descriptor.string_length==STRING_DEFAULT_LENGTH
+                        and native.type_text==string_descriptor.canonical
+                        and ui['data_type']=='STRING')
+        if native.type_code != 128 and dtype and dtype != ui["data_type"] and not string_display:
             raise BridgeError(
                 "Table editor/native data type differs: {}.".format(native.name)
             )
         if obj.kind == "gvt":
             if (
-                native.type_code in (1, 4, 16, 32)
+                native.type_code in (1, 4, 16, 32, 2048)
                 and native.initial_raw != ui["initial_raw"]
             ):
                 raise BridgeError("Table editor/native scalar initial value differs.")
@@ -134,7 +140,23 @@ def add_row(adapter, before, op, kind, complex_type=False, preflight_types=()):
             )
 
     if op["data_type"] != "BOOL":
-        if complex_type:
+        scalar=descriptor(op['data_type'])
+        if scalar is not None and scalar.code==2048:
+            updated=adapter.set_cell(op['name'],'data_type','BOOL',op['data_type'])
+            if len(updated)!=len(desired) or updated[:-1]!=desired[:-1]:
+                raise BridgeError('STRING type change altered existing table rows.')
+            allowed_types=(scalar.canonical,'STRING') if scalar.string_length==STRING_DEFAULT_LENGTH else (scalar.canonical,)
+            if updated[-1]['data_type'] not in allowed_types:
+                raise BridgeError('STRING type change returned an unexpected display capacity.')
+            desired[-1]['data_type']=updated[-1]['data_type']
+            if kind=='gvt':
+                # The normal STRING<20> save has empty hidden/display defaults
+                # and 160 bits. No structure preview or scalar integer default.
+                desired[-1].update(initial_raw='',initial_value='',
+                                   bit_length='nBitLen:'+str(scalar.string_length*8))
+            if updated!=desired:
+                raise BridgeError('STRING type change altered unrelated new-row fields or defaults.')
+        elif complex_type:
             if kind != "gvt" or op.get("initial_value", "missing") is not None:
                 raise BridgeError("Complex GVT additions require null IDE initialization.")
             if choices is None:
@@ -156,11 +178,25 @@ def add_row(adapter, before, op, kind, complex_type=False, preflight_types=()):
         else:
             desired[-1]["data_type"] = op["data_type"]
             if kind == "gvt":
-                bits = 32 if op["data_type"] == "DINT" else 16
+                bits = 32 if op["data_type"] in ("DINT", "REAL") else 16
                 desired[-1].update(
                     initial_raw="0", initial_value="0", bit_length="nBitLen:" + str(bits)
                 )
-            commit("data_type", "BOOL", op["data_type"])
+            if kind == "gvt" and op["data_type"] == "REAL":
+                updated = adapter.set_cell(op["name"], "data_type", "BOOL", "REAL")
+                if len(updated) != len(desired) or updated[:-1] != desired[:-1]:
+                    raise BridgeError("REAL type change altered existing table rows.")
+                # Native REAL archives differ between FB and GVT and the IDE
+                # owns its new-row default spelling. Freeze the actual default
+                # while retaining every unrelated field and the known 32 bits.
+                if updated[-1]["initial_value"] != updated[-1]["initial_raw"]:
+                    raise BridgeError("REAL hidden/display initializer differs.")
+                desired[-1].update(initial_raw=updated[-1]["initial_raw"],
+                                   initial_value=updated[-1]["initial_value"])
+                if updated != desired:
+                    raise BridgeError("REAL type change altered unrelated new-row fields.")
+            else:
+                commit("data_type", "BOOL", op["data_type"])
     if kind == "gvt" and not complex_type and op["initial_value"] != desired[-1]["initial_value"]:
         old = desired[-1]["initial_value"]
         desired[-1].update(
@@ -237,3 +273,56 @@ class WindowsTableSession(WindowsSession):
 
     def grid(self):
         return normalize_rows(self.raw_grid(), self.kind)
+
+    def prepare_edit_rows(self, rows=None):
+        """Materialize sparse old GVT metadata from the actual visible grid.
+
+        Selecting an existing name may paint a previously unvisited declaration
+        root. Only empty id/bit-length fields may become known; nothing is filled
+        from native bytes or inferred from a type. No F2, value edit or save.
+        """
+        current=copy.deepcopy(self.grid() if rows is None else rows)
+        record=dict(status='not_required',source='actual_name_cell_and_complete_grid',
+                    native_values_used=False,targeted_names=[],materialized_fields=[])
+        self.last_edit_row_preparation=record
+        if self.kind!='gvt' or not current:return current
+        missing=[row['name'] for row in current if row['id']=='' or row['bit_length']=='']
+        if not missing:return current
+        if self.dirty():raise BridgeError('Cannot prepare existing table metadata with unsaved changes.')
+        record['status']='preparing'
+        self.restore_for_cell_edit()
+        self.activate()
+        for name in missing:
+            previous=next(row for row in current if row['name']==name)
+            if previous['id']!='' and previous['bit_length']!='':continue
+            self.assert_no_cell_edit()
+            selected=self.accessible('select_verified_cell',self.variable_grid(),
+                                     variable=name,column=GLOBAL_COLUMNS['name'],expected=name)
+            if selected!='selection_verified':
+                raise BridgeError('Existing declaration name was not verified during metadata preparation.')
+            record['targeted_names'].append(name)
+            observed=self.grid()
+            if self.dirty():raise BridgeError('Metadata preparation changed table dirty state.')
+            if len(observed)!=len(current):raise BridgeError('Declaration count changed during metadata preparation.')
+            for before,after in zip(current,observed):
+                if set(before)!=set(after):raise BridgeError('Declaration columns changed during metadata preparation.')
+                for field,value in before.items():
+                    actual=after[field]
+                    if field in ('id','bit_length') and value=='' and actual!='':
+                        valid=(isinstance(actual,str) and (
+                            re.fullmatch(r'[1-9][0-9]*',actual) if field=='id'
+                            else re.fullmatch(r'nBitLen:[1-9][0-9]*',actual)))
+                        if not valid:raise BridgeError('Unsupported actual declaration metadata during preparation: '+field)
+                        record['materialized_fields'].append(dict(name=before['name'],field=field,before=value,after=actual))
+                    elif actual!=value:
+                        raise BridgeError('Existing declaration changed during metadata preparation: '+before['name']+'.'+field)
+            current=copy.deepcopy(observed)
+            target=next(row for row in current if row['name']==name)
+            if target['id']=='' or target['bit_length']=='':
+                raise BridgeError('Could not materialize complete existing declaration metadata from the GUI before writing: '+name)
+        if any(row['id']=='' or row['bit_length']=='' for row in current):
+            raise BridgeError('Existing declaration metadata is still incomplete before writing.')
+        if len({row['id'] for row in current})!=len(current):
+            raise BridgeError('Duplicate declaration IDs after actual metadata preparation.')
+        record['status']='prepared_from_actual_grid'
+        return current

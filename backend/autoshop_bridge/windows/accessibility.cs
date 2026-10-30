@@ -1,12 +1,76 @@
 // System MSAA bridge. No clipboard, global input, injection or process memory.
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Accessibility;
 
 public static class BridgeAccessibility {
+ // These private RCWs belong to one synchronous helper invocation. Never
+ // release an RCW while a call is in flight, share it with another invocation,
+ // or let it escape in a result. FinalRelease is once per RCW, not per alias.
+ sealed class ReferenceIdentity:IEqualityComparer<object> {
+  public new bool Equals(object left,object right){return Object.ReferenceEquals(left,right);}
+  public int GetHashCode(object value){return RuntimeHelpers.GetHashCode(value);}
+ }
+ sealed class ComScope:IDisposable {
+  readonly HashSet<object> seen=new HashSet<object>(new ReferenceIdentity());
+  readonly List<object> owned=new List<object>();
+  readonly Func<object,bool> isCom;readonly Action<object> release;
+  bool disposed;
+  public ComScope():this(Marshal.IsComObject,delegate(object value){Marshal.FinalReleaseComObject(value);}){}
+  public ComScope(Func<object,bool> isCom,Action<object> release){this.isCom=isCom;this.release=release;}
+  public object Track(object value){
+   if(disposed)throw new ObjectDisposedException("ComScope");
+   if(value!=null && isCom(value) && seen.Add(value))owned.Add(value);
+   return value;
+  }
+  public void Dispose(){
+   if(disposed)return;disposed=true;
+   List<Exception> errors=new List<Exception>();
+   // Parents enter before objects obtained from them. Keep all aliases alive
+   // until the operation finishes, then release children before their parents.
+   for(int i=owned.Count-1;i>=0;i--)try{release(owned[i]);}catch(Exception error){errors.Add(error);}
+   owned.Clear();seen.Clear();
+   if(errors.Count!=0)throw new AggregateException("Accessibility COM cleanup failed",errors);
+  }
+ }
+ static readonly object invocationGate=new object();
+ [ThreadStatic] static ComScope currentScope;
+ static object Own(object value){
+  if(currentScope==null)throw new InvalidOperationException("Accessibility COM access requires an invocation scope");
+  return currentScope.Track(value);
+ }
+ static void ManagedResult(object value,HashSet<object> seen){
+  if(value==null || value is string || value.GetType().IsPrimitive || value is decimal)return;
+  if(Marshal.IsComObject(value)){Own(value);throw new InvalidOperationException("Accessibility result cannot contain a COM object");}
+  if(!seen.Add(value))throw new InvalidOperationException("Accessibility result contains a container cycle");
+  try{
+   IDictionary dictionary=value as IDictionary;
+   if(dictionary!=null){foreach(DictionaryEntry item in dictionary){ManagedResult(item.Key,seen);ManagedResult(item.Value,seen);}return;}
+   IEnumerable list=value as IEnumerable;
+   if(list!=null){foreach(object item in list)ManagedResult(item,seen);return;}
+   throw new InvalidOperationException("Accessibility result contains an unsupported managed object");
+  }finally{seen.Remove(value);}
+ }
+ static object InvokeOwned(Func<object> operation){
+  lock(invocationGate){
+   if(currentScope!=null)throw new InvalidOperationException("Nested accessibility invocations are unsupported");
+   ComScope scope=new ComScope();object result=null;Exception failure=null;
+   currentScope=scope;
+   try{result=operation();ManagedResult(result,new HashSet<object>(new ReferenceIdentity()));}
+   catch(Exception error){failure=error;}
+   finally{
+    currentScope=null;
+    try{scope.Dispose();}catch(Exception cleanup){failure=failure==null?cleanup:new AggregateException("Accessibility operation and COM cleanup failed",failure,cleanup);}
+   }
+   if(failure!=null)throw failure;
+   return result;
+  }
+ }
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
  [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
@@ -24,25 +88,30 @@ public static class BridgeAccessibility {
   public Node(IAccessible o,object id){Object=o;Id=id;}
   public string Name{get{return Object.get_accName(Id)??"";}}
   public string Value{get{return Object.get_accValue(Id)??"";}}
-  public int Role{get{return Convert.ToInt32(Object.get_accRole(Id));}}
-  public int State{get{return Convert.ToInt32(Object.get_accState(Id));}}
-  IAccessible Client(){return (int)Id==0?Object:Object.get_accChild(Id) as IAccessible;}
+  public int Role{get{return Convert.ToInt32(Own(Object.get_accRole(Id)));}}
+  public int State{get{return Convert.ToInt32(Own(Object.get_accState(Id)));}}
+  IAccessible Client(){return (int)Id==0?Object:Own(Object.get_accChild(Id)) as IAccessible;}
   public int ChildCount{get{IAccessible obj=Client();return obj==null?0:obj.accChildCount;}}
   public Node ChildAt(int index){
    IAccessible obj=Client();
    if(obj==null || index<0 || index>=obj.accChildCount)throw new Exception("Child index is outside bounds");
    object[] items=new object[1];int got;
-   Marshal.ThrowExceptionForHR(AccessibleChildren(obj,index,1,items,out got));
+   int hr=AccessibleChildren(obj,index,1,items,out got);
+   foreach(object item in items)Own(item);
+   Marshal.ThrowExceptionForHR(hr);
    if(got!=1)throw new Exception("Accessibility child enumeration is incomplete");
    if(items[0] is IAccessible)return new Node((IAccessible)items[0],0);
    if(items[0] is int)return new Node(obj,items[0]);
    throw new Exception("Unsupported accessibility child");
   }
   public List<Node> Children(){
-   IAccessible obj=(int)Id==0?Object:Object.get_accChild(Id) as IAccessible;
+   IAccessible obj=Client();
    List<Node> list=new List<Node>();if(obj==null)return list;
    int count=obj.accChildCount;if(count<0 || count>10000)throw new Exception("Unexpected accessibility child count");
-   object[] items=new object[count];int got;Marshal.ThrowExceptionForHR(AccessibleChildren(obj,0,count,items,out got));
+   object[] items=new object[count];int got;int hr=AccessibleChildren(obj,0,count,items,out got);
+   foreach(object item in items)Own(item);
+   Marshal.ThrowExceptionForHR(hr);
+   if(got<0 || got>count)throw new Exception("Invalid accessibility child enumeration count");
    for(int i=0;i<got;i++) {
     if(items[i] is IAccessible)list.Add(new Node((IAccessible)items[i],0));
     else if(items[i] is int)list.Add(new Node(obj,items[i]));
@@ -52,7 +121,7 @@ public static class BridgeAccessibility {
  }
  static string Text(IntPtr h){StringBuilder b=new StringBuilder(8192);GetWindowText(h,b,b.Capacity);return b.ToString();}
  static string Class(IntPtr h){StringBuilder b=new StringBuilder(256);GetClassName(h,b,b.Capacity);return b.ToString();}
- static Node Root(IntPtr h){Guid iid=new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");IAccessible o;Marshal.ThrowExceptionForHR(AccessibleObjectFromWindow(h,0xfffffffc,ref iid,out o));return new Node(o,0);}
+ static Node Root(IntPtr h){Guid iid=new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");IAccessible o;int hr=AccessibleObjectFromWindow(h,0xfffffffc,ref iid,out o);Own(o);Marshal.ThrowExceptionForHR(hr);if(o==null)throw new Exception("Accessibility root is missing");return new Node(o,0);}
  static UIntPtr Message(IntPtr h,uint m,UIntPtr w,IntPtr l){UIntPtr value;if(SendMessageTimeout(h,m,w,l,2,1500,out value)==IntPtr.Zero)throw new Exception("Control message timed out");return value;}
  static void Validate(IntPtr main,IntPtr target,int pid,string project,string program,bool tree){
   uint p;GetWindowThreadProcessId(main,out p);if(p!=pid)throw new Exception("Main process changed");
@@ -74,14 +143,28 @@ public static class BridgeAccessibility {
   }
  }
  sealed class GridSource:IBridgeGridSource {
-  readonly Node root;readonly Dictionary<int,Node> children=new Dictionary<int,Node>();
-  readonly Dictionary<long,Node> cells=new Dictionary<long,Node>();
+  readonly Node root;List<Node> children;
+  readonly Dictionary<int,List<Node>> cells=new Dictionary<int,List<Node>>();
   public GridSource(Node root){this.root=root;}
   public int ChildCount{get{return root.ChildCount;}}
-  Node Child(int index){Node n;if(!children.TryGetValue(index,out n)){n=root.ChildAt(index);children.Add(index,n);}return n;}
+  static List<Node> Snapshot(Node parent){
+   int count=parent.ChildCount;
+   List<Node> result=parent.Children();
+   if(result.Count!=count || parent.ChildCount!=count)throw new Exception("Accessibility children changed during snapshot");
+   return result;
+  }
+  Node Child(int index){
+   // Experimental per-invocation enumeration profile: real marshaller-returned
+   // Nodes only. Counts and field properties stay live, never native-filled.
+   if(children==null)children=Snapshot(root);
+   if(index<0 || index>=children.Count)throw new Exception("Child index is outside snapshot bounds");
+   return children[index];
+  }
   public Node Cell(int child,int column){
-   long key=((long)child<<32)|(uint)column;Node n;
-   if(!cells.TryGetValue(key,out n)){n=Child(child).ChildAt(column);cells.Add(key,n);}return n;
+   List<Node> row;
+   if(!cells.TryGetValue(child,out row)){row=Snapshot(Child(child));cells.Add(child,row);}
+   if(column<0 || column>=row.Count)throw new Exception("Cell column is outside snapshot bounds");
+   return row[column];
   }
   public int Role(int child){return Child(child).Role;}
   public string Name(int child){return Child(child).Name;}
@@ -122,7 +205,7 @@ public static class BridgeAccessibility {
   int sx=x+w/2,sy=y+h/2;
   int gx,gy,gw,gh;Node gridRoot=Root(target);gridRoot.Object.accLocation(out gx,out gy,out gw,out gh,0);
   if(sx<gx || sy<gy || sx>=gx+gw || sy>=gy+gh)throw new Exception("Target geometry outside control");
-  object hit=Root(target).Object.accHitTest(sx,sy);
+  object hit=Own(Root(target).Object.accHitTest(sx,sy));
   IAccessible hitObject=hit as IAccessible;
   // This grid reports its row/root for hit tests, not the cell. Its actual
   // selected-cell state must be checked in a subsequent request before F2.
@@ -167,13 +250,21 @@ public static class BridgeAccessibility {
    int sx=x+w/2,sy=y+h/2;
    if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)return cell;
    if(w<=2 || h<=2)throw new Exception("Variable column is hidden");
-   if(sx<gx || sx>=gx+gw)Message(target,0x114,new UIntPtr(sx<gx?0u:1u),IntPtr.Zero);
-   else {
+   // MSAA can flag a partially clipped cell INVISIBLE even while its centre
+   // remains in the grid. Choose the reveal axis/direction from actual edges,
+   // not that centre, while keeping the strict visible-state return above.
+   bool left=x<gx,right=(long)x+w>(long)gx+gw;
+   bool above=y<gy+20,below=(long)y+h>(long)gy+gh;
+   if(left || right){
+    if(left && right && sx>=gx && sx<gx+gw)throw new Exception("Invisible variable cell is wider than the grid; expand the declaration pane before editing");
+    Message(target,0x114,new UIntPtr((left && !right) || sx<gx?0u:1u),IntPtr.Zero);
+   }else if(above || below){
+    if(above && below && sy>=gy+20 && sy<gy+gh)throw new Exception("Invisible variable cell is taller than the data area; expand the declaration pane before editing");
     // ActiveX consumes wheel input itself rather than outer WM_VSCROLL.
     int packed=((gx+gw/2)&0xffff)|(((gy+gh/2)&0xffff)<<16);
-    uint wheel=sy<gy+20?0x00780000u:0xff880000u;
+    uint wheel=(above && !below) || sy<gy+20?0x00780000u:0xff880000u;
     Message(target,0x20a,new UIntPtr(wheel),new IntPtr(packed));
-   }
+   }else throw new Exception("Variable cell is marked invisible/offscreen without a clipped edge; inspect the declaration pane before editing");
    System.Threading.Thread.Sleep(20);
   }
   throw new Exception("Could not reveal variable cell by targeted scrolling");
@@ -247,12 +338,18 @@ public static class BridgeAccessibility {
   return "initial_member_selection_verified";
  }
  public static object ReadInstancePage(long mainValue,long targetValue,int pid,string project,string program,int offset,int limit){
+  return InvokeOwned(delegate{return ReadInstancePageCore(mainValue,targetValue,pid,project,program,offset,limit);});
+ }
+ static object ReadInstancePageCore(long mainValue,long targetValue,int pid,string project,string program,int offset,int limit){
   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);
   Validate(main,target,pid,project,program,false);
   object result=BridgeGridReader.ReadInstancePage(new GridSource(Root(target)),offset,limit);
   Validate(main,target,pid,project,program,false);return result;
  }
  public static object Run(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
+  return InvokeOwned(delegate{return RunCore(action,mainValue,targetValue,pid,project,program,variable,column,expected);});
+ }
+ static object RunCore(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);bool keyboardContext=action=="tree_context_keyboard";
   if(action=="instance_initial_read" || action=="instance_initial_select")return InitialRun(action,main,target,pid,project,variable,column,expected);
   bool tree=action=="open" || action=="tree_context" || keyboardContext || action=="tree_nodes" || action=="tree_inventory";

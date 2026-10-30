@@ -11,11 +11,7 @@ description: Read and modify AutoShop PLC projects using bundled scripts. Use fo
 
 FBI已有实例的名称、注释和初值走[既有实例编辑](references/data-editing.md#fbi已有实例编辑)：文件模式修改完整原生字符串；编辑器初值明确指定工具箱成员路径，先读取真实成员旧值。文件模式不改引用，正常IDE改名可能自动保存引用，按结果清单核对。
 
-s20实现正常IDE选择点限定库类型和已登记LD功能块引用：LiteST宿主内部VAR用editor-variables，全局FBI用instances-editor-add及其FB专用选择器。准确根定义/哈希和真实选择器保证执行资格，不递归证明业务语义。平面结构混合空/非空成员注释两模式及关联改名采用同一已观察模板，保留末尾分隔符。详细例子、保存地址差量及尚未实现范围见[变量和表](references/data-editing.md)；本批已完成独立副本组合及恢复后的0错误编译；这些历史证据不代替调用者本次工程验收。
-
-s21方法一支持库/已登记LD实例：VAR库add用`type_kind:"function_block"`显式选择256记录，FBI天然FB、不带该字段；类型存在性与业务语义交编译，不宣称冻结外部安装库。限定样本、单项/批量写入、重开完整回读及组合/恢复0错误编译已验。JSON和边界见[变量和表](references/data-editing.md)；先核对安装修订号，历史验证不代替本次工程验收。
-
-s22限定原生验收完成：未知HCPP工程可用独立[项目登记基线](references/project-registration.md)显式核对扫描、声明编辑及正常创建；默认strict及旧正文凭据保持。FC离线正文新增限定匹配全零输入、保留旧行表路径，规则见[变量和表](references/data-editing.md)。本包为s22；本轮空FBI两项与FC组合21:03:55编译0错误，第三项终态写入与恢复均完成，21:11:23及21:16:23均0错误；完整包另验。
+s23支持FB/FC、结构成员及GVT的REAL、`STRING`/`STRING<n>`两模式新增，沿原命令与清单；FB INOUT及FC初值为null，裸STRING采用已观察默认128。类型/初值JSON、库与已登记LD实例、混合结构注释见[变量和表](references/data-editing.md)。未知HCPP显式资格走[项目登记基线](references/project-registration.md)，FC文件正文及新类型批量写入见[离线开发](references/offline-editing.md)。限定实测、历史fault及未实现范围分别见[验证](references/validation.md)和[能力边界](references/capabilities.md)，历史成功不替代调用者本次验收。
 
 以随包固定版本的CLI处理用户指定的AutoShop工程。只调用工具；不要修改后台Python/C#、生成的清单或备份。Skill不增加授权，也不绕过宿主限制。
 
@@ -39,7 +35,7 @@ python -B $bridge --help
 python -B $bridge project-summary --project $project --limit 20
 ```
 
-应读到CLI `1.03`、skill_revision `2026-10-29.s22`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
+应读到CLI `1.03`、skill_revision `2026-10-30.s23`且包检查为`bundle_verified`；旧安装只看CLI版本不能证明已更新。`bundle_invalid`时停止工程调用，按[环境和限制](references/environment.md#安装完整性失败)定位部署问题。安装目录额外的`.git`或缓存也会被拒绝，不能删除未知文件或改清单绕过。Python要求3.9+标准库；方法二还需要Windows交互桌面、Windows PowerShell/.NET和已打开的目标AutoShop工程。不要自行启动服务、构建辅助程序或修改全局环境。
 
 ## 最短可靠流程
 

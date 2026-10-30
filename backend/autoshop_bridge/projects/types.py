@@ -5,8 +5,14 @@ import re
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import assert_hash
+from autoshop_bridge.formats.scalar_types import descriptor
 
-SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16}
+SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32}
+
+
+def selector_name(name):
+    scalar=descriptor(name)
+    return 'STRING' if scalar is not None and scalar.string_length is not None else name
 
 
 def catalog(project, requested, owner=None):
@@ -21,7 +27,7 @@ def catalog(project, requested, owner=None):
     types, hashes, active = {}, {}, set()
 
     def visit(name, native_fb_reference=False):
-        if name in SCALARS:
+        if descriptor(name) is not None:
             return
         key = name.casefold()
         if key in active or (owner and key == owner.casefold()):
@@ -105,7 +111,7 @@ def ide_catalog(project, requested, owner=None, *, target=None, fb_only=False):
             raise BridgeError("Invalid Unicode in named IDE type.") from exc
         if size > 512:
             raise BridgeError("Expected an exact named IDE type.")
-        if name in SCALARS:
+        if descriptor(name) is not None:
             continue
         matches = definitions.get(name.casefold(), [])
         if len(matches) > 1:
