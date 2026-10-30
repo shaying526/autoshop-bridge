@@ -1,9 +1,42 @@
 """Observed structure member sequences and comment-default serialization."""
 
-from autoshop_bridge.errors import BridgeError
+from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats.fb import Reader
+from autoshop_bridge.formats.scalar_types import descriptor
 from autoshop_bridge.formats.tables import TYPES as BUILTIN_TYPES
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
+
+
+def flat_scalar_definition(raw, name):
+    """Qualify the observed flat scalar members, not their default grammar.
+
+    The declaration record pairs code with native type text. STRING capacity
+    must be explicit and canonical; accepting code 2048 alone would also admit
+    unknown descriptors. This never qualifies ARRAY/nested/default layouts.
+    """
+    from autoshop_bridge.formats import tables
+
+    definition = tables.parse(raw, "stru")
+    if definition.name != name or not definition.rows:
+        raise BridgeError("Expected the exact nonempty structure definition.")
+    for index, row in enumerate(definition.rows):
+        dtype = row.type_text or BUILTIN_TYPES.get(row.type_code)
+        scalar = descriptor(dtype)
+        text_matches = (scalar is not None and (
+            row.type_text == scalar.type_text if scalar.string_length is not None
+            else row.type_text in ("", scalar.canonical)))
+        if scalar is None or scalar.code != row.type_code or not text_matches:
+            value = dict(type_code=row.type_code, type_text_raw=row.type_text)
+            raise FormatRejection(
+                "Structure member scalar descriptor is not implemented: "
+                "structure={!r}, member={} {!r}, type_code={}, type_text={!r}.".format(
+                    name, index + 1, row.name, row.type_code, row.type_text),
+                code="offline_structure_member_unobserved",
+                context=dict(stage="flat_structure_member", structure=name,
+                             member=row.name, member_index=index, field="data_type",
+                             value=value, index_base=0, reason="unobserved_scalar_descriptor"),
+            )
+    return definition
 
 
 def comment_initializer(members):

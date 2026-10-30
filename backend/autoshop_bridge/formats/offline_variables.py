@@ -11,14 +11,11 @@ from dataclasses import dataclass
 from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import fb, tables
 from autoshop_bridge.formats.scalar_types import descriptor
-from autoshop_bridge.formats.structure import comment_initializer
+from autoshop_bridge.formats.structure import comment_initializer, flat_scalar_definition
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
 PROFILE = "fb-flat-scalar-variables-candidate-v1"
-# This initializer grammar has separate evidence from direct scalar records.
-# Adding a scalar codec must not silently qualify new structure layouts.
-FLAT_STRUCTURE_CODES = frozenset((1, 4, 16))
 
 
 @dataclass(frozen=True)
@@ -70,21 +67,23 @@ def flat_structure_initial(raw, name):
     Nonempty scalar-member comments were observed in saved IN/OUT structures.
     All-empty comments produce an empty initializer. Mixed comments use the
     same position-based separator rule observed in VAR/IN/OUT/INOUT saves on
-    2026-10-28. Nested types, strings and explicit defaults remain unsupported.
+    2026-10-28. REAL and canonical STRING members were independently saved
+    across all categories on 2026-10-30; additional VAR saves confirm native
+    comment separators 6/8 and CRLF. Nested types and explicit defaults remain
+    unsupported.
     AutoShop V4.11.0.5 saves literal '=' and '#' inside member comments
     unchanged (INOUT probe, 2026-10-26). No escaping is inferred for other
     initializer delimiters; definition comments themselves are never rewritten.
     """
-    definition = tables.parse(raw, "stru")
-    if definition.name != name or not definition.rows:
-        raise BridgeError("Expected the exact nonempty structure definition.")
+    definition = flat_scalar_definition(raw, name)
     for index, row in enumerate(definition.rows):
-        if row.type_code not in FLAT_STRUCTURE_CODES or row.type_text not in (
-            "", tables.TYPES.get(row.type_code)
-        ):
-            raise BridgeError("Only observed flat BOOL/INT/DINT structures are candidates.")
-        _text(row.comment)
-        positions = [i for i, c in enumerate(row.comment) if c in "(),:"]
+        # These are saved native separators, not user input. Keep their bytes
+        # in the generated template; do not apply display normalization here.
+        crlf = {position for i in range(len(row.comment) - 1)
+                if row.comment[i:i + 2] == "\r\n" for position in (i, i + 1)}
+        controls = {i for i, c in enumerate(row.comment)
+                    if ord(c) < 32 and c not in "\x06\x08" and i not in crlf}
+        positions = [i for i, c in enumerate(row.comment) if c in "(),:" or i in controls]
         if positions:
             raise FormatRejection(
                 "Structure initializer comment grammar needs an IDE probe: "
@@ -96,8 +95,12 @@ def flat_structure_initial(raw, name):
                              member=row.name, member_index=index, field="comment",
                              comment=row.comment, characters=[row.comment[i] for i in positions],
                              character_positions=positions, index_base=0,
-                             reason="unobserved_delimiter", requires="independent_ide_probe"),
+                             reason="unobserved_control" if controls else "unobserved_delimiter",
+                             requires="independent_ide_probe"),
             )
+        _text(row.comment.replace("\x06", "").replace("\x08", "").replace("\r\n", ""))
+        if len(row.comment.encode("utf-8")) > 4096:
+            raise BridgeError("Structure member comment exceeds the supported native text limit.")
     return comment_initializer((row.name, row.comment) for row in definition.rows)
 
 

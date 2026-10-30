@@ -1,8 +1,62 @@
 # 变量、结构、全局表与实例
 
-## REAL与STRING新增（s23开发）
+## 含REAL/STRING的扁平结构变量与FB接口（s24）
 
-s23两模式空/非空正式写入、完整回读、组合/恢复编译及最终关闭审计已完成限定原生验收；完整回归、包校验、安装及发布仍待，当前指定安装和GitHub仍为s22。先核实际skill_revision，不能把本节参数用于尚未更新的安装。
+已登记的非空扁平结构可包含BOOL、INT、DINT、REAL及具有准确原生容量描述的STRING成员。结构定义的类型码与文本逐项匹配，STRING原生文本须为规范的`STRING<n>`；工具保留容量，不将2048类型码或裸UI显示当作完整描述。容量登记已统一类型识别，不再有旧四位数字白名单；本机正常IDE实际容量样本为20和128，不保证其他容量或目标PLC均支持。
+
+FB四类别结构新增和GVT结构新增均传`initial_value:null`，由各自已观察profile生成默认记录。FB默认模板保留成员原顺序、注释及末项分隔规则；原生6/8分隔符和CRLF不清洗成显示文字。GVT原生初值为空串，与界面隐藏预览独立，不套FB模板、不写推算地址。CRLF真实保存证据为VAR补充样本，其他类别的CRLF目前为合成编码回归。ARRAY、嵌套、任意显式复杂值，以及初始化语法中的未知C0控制符、孤立CR/LF或`(),:`仍需独立profile；错误给出结构、成员、字段和实际值。正文、引用及多文件修改由调用AI组织，旧引用不阻断正常新增或改名，不增加自动业务同步接口。
+
+**文件模式**使用新的offline工作目录，关闭整个目标工程后按[离线命令及完整保护](offline-editing.md#命令与路径)执行export/check/build/apply。将准确文件名和本次已登记类型替换下例中的`Controller.FB`、`Globals.gvt`、`FlatData`；声明不会自动插入正文：
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"stLocal","data_type":"FlatData","category":"VAR","initial_value":null,"comment":"Local structure"},
+    {"op":"add","name":"stInput","data_type":"FlatData","category":"IN","initial_value":null,"comment":"Input structure"},
+    {"op":"add","name":"stOutput","data_type":"FlatData","category":"OUT","initial_value":null,"comment":"Output structure"},
+    {"op":"add","name":"stReference","data_type":"FlatData","category":"INOUT","initial_value":null,"comment":"Reference structure"}
+  ]},
+  {"file":"Globals.gvt","variable_operations":[
+    {"op":"add","name":"stGlobal","data_type":"FlatData","initial_value":null,"comment":"Global structure"}
+  ]}
+]}
+```
+
+需要修改调用或引用时，由调用者另在适用目标指定`source_file`，或随后通过正文入口修改。全局名称在正文中需要`::`等作用域语法时同样由调用者组织并交编译；工具不会据声明自动推断或改写正文。
+
+**编辑器模式**沿用`editor-variables`，从本次`editor-read`取得FB原生哈希，以新文件保存以下操作清单：
+
+```json
+{"schema":1,"operations":[
+  {"op":"add","name":"stLocal","data_type":"FlatData","category":"VAR","initial_value":null,"comment":"Local structure"},
+  {"op":"add","name":"stInput","data_type":"FlatData","category":"IN","initial_value":null,"comment":"Input structure"},
+  {"op":"add","name":"stOutput","data_type":"FlatData","category":"OUT","initial_value":null,"comment":"Output structure"},
+  {"op":"add","name":"stReference","data_type":"FlatData","category":"INOUT","initial_value":null,"comment":"Reference structure"}
+]}
+```
+
+```powershell
+python -B $bridge editor-variables --project $project --program $program --changes "$artifacts/flat-variables.json" --expect-sha256 $nativeHash --experimental --save
+```
+
+GVT先对准确表文件执行`table-export`，仅编辑该工作目录的changes.json；文件模式结构引用不改用旧table-check/build/apply：
+
+```json
+{"schema":1,"operations":[
+  {"op":"add","name":"stGlobal","data_type":"FlatData","initial_value":null,"comment":"Global structure"}
+]}
+```
+
+```powershell
+python -B $bridge table-export $tableNative --workspace $tableWork
+python -B $bridge table-editor-edit $tableWork --project $project --table $tableName --open --experimental --save
+```
+
+以上是两种可选执行方式，不对同一名称重复运行。空表及仅有复杂类型的表沿既有默认BOOL行与延后选择器预检；出现部分修改或未知状态先完整读取实际缓冲，按已完成步骤续作，不重放整批。身份、定义/原生哈希、未保存内容、唯一备份、完整回读及非目标保护保持。本修订的实际样本、组合编译和恢复范围见[验证记录](validation.md)，不把文件候选或合成测试当本次工程已编译。
+
+## REAL与STRING直接声明新增（s23）
+
+s23已交付2026-10-30.s23/CLI1.03/89文件，完整回归、包校验、指定安装及GitHub953c137逐文件一致。先核实际skill_revision与bundle_verified；同为CLI1.03不表示旧安装具有后续修订能力。
 
 REAL和STRING沿用本页原命令及清单，不新增专用写入入口。文件模式用[offline系列JSON与完整保护](offline-editing.md)，编辑器用editor-variables或table-editor-edit；下表两种模式共用：
 
@@ -60,7 +114,7 @@ GVT示例：
 ]}
 ```
 
-已有BOOL/INT/DINT和结构引用流程保持原profile。直接新增REAL/STRING声明不表示已实现数组新增、嵌套结构，或含这些新成员的FB/GVT结构默认初始化串生成；未知关联布局仍明确待实现。两种模式都保留身份、未保存状态、基线、唯一备份、完整正文/整表回读及非目标保护，正文和多文件修改由调用AI组织。
+已有BOOL/INT/DINT和结构引用流程保持原profile；含REAL/STRING成员的扁平结构变量及FB接口按本页s24首节处理，不能由直接标量新增推定ARRAY、嵌套或任意复杂初值也已支持。两种模式都保留身份、未保存状态、基线、唯一备份、完整正文/整表回读及非目标保护，正文和多文件修改由调用AI组织。
 
 ## FBI已有实例编辑
 
@@ -146,11 +200,11 @@ python -B $bridge editor-variables --project $project --program $program --chang
 ]}
 ```
 
-- FB：已有注释及支持标量初值set；BOOL/INT/DINT新增保持原行为，s23开发增加的REAL/STRING见本页首节。VAR/IN/OUT初值字符串，INOUT标量必须null；IN/OUT/INOUT可新增项目结构，内部VAR可新增项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。平面BOOL/INT/DINT结构支持全空、全非空及混合成员注释，详见下节。宿主须为已支持LiteST FB，不能用此入口直接修改LD宿主。
+- FB：已有注释及支持标量初值set；BOOL/INT/DINT及s23 REAL/STRING直接声明保持原行为。VAR/IN/OUT标量初值为字符串，INOUT标量必须null；IN/OUT/INOUT可新增项目结构，内部VAR可新增项目结构或项目FB实例，复杂类型initial_value必须显式null，交给IDE默认初始化。含REAL/STRING成员的扁平结构及注释profile见本页首节。宿主须为已支持LiteST FB，不能用此入口直接修改LD宿主。
 - s20方法二可引用准确登记的LiteST/已识别LD项目FB，以及真实类型选择器中的点限定库类型，例如`TRIG.R_TRIG`。冻结准确根定义身份及可读定义文件哈希，不递归证明成员、引用或业务类型使用正确。真实选择器须准确唯一命中；方法二未登记单段库名及未知原生布局仍未实现。方法一库/LD的s21用法见上节，不向editor-variables清单加入type_kind。
 - 内部VAR选择器未读取类型分类，未登记点限定名称先标`ide_resolved`，不预断为FB。保存后只接受原生64（结构）或256（FB），核对实际名称/类型文本、VAR类别和已知默认字段；结果`named_type_resolution`与备份`native_added_variables.json`记录实际类型及初值。未保存状态仍待原生回读，不能据此报告已确认FB类型。
 - 空表或仅有复杂声明的非空表，可在备份后创建并核对准确默认行，再延后类型选择器预检；有可用标量行时先预检。dry-run不创建行。失败可能留下已知未保存行，先回读现场，不盲目重放。
-- FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT标量新增initial_value必须null，s23开发REAL/STRING见首节。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。数组/结构等复杂类型、返回类型、FCI和新建FC仍未实现。不要把FB示例字符串初值套给FC。
+- FC：独立六列表，没有初值/保持列；已有注释set，VAR/IN/OUT/INOUT标量新增initial_value必须null，s23 REAL/STRING见直接声明一节。s11支持空表首项：备份后核对默认VAR/BOOL六列行，再预检类型/类别选择器。失败可能留已知未保存首行，停止、回读，不保存或重放。dry-run不创建行，selector_preflight=pending_first_default_row表示仍待真实预检。数组/结构等复杂类型、返回类型、FCI和新建FC仍未实现。不要把FB示例字符串初值套给FC。
 - 文件export的variables.json只读；FB/FC离线编辑改走offline系列，FC支持标量add或独立delete，不混用add/delete。s22另支持下节限定source_file正文路径，保留完整旧行表，不制造新LF表。不能修改只读快照充当写入接口。整表、正文、原记录和引用类型哈希保护保持，保存前备份，保存后原生/窗口核对。新增INOUT后的调用实参由AI按需求修改，工具不自动绑定。
 
 库/LD引用沿用上面的editor-variables命令及同一JSON格式。以下`ExampleLadderFB`为合成占位，必须替换为本次工程已登记LD功能块的准确名称；`TRIG.R_TRIG`也须在本机真实选择器中存在，不硬编码软件库清单。
@@ -189,7 +243,7 @@ python -B $bridge table-check $tableWork
 ]}
 ```
 
-结构成员add只有op/name/data_type/comment；GVT新增标量还需initial_value字符串。BOOL/INT/DINT保持原规则，BOOL用ON/OFF，INT/DINT用规范十进制；s23开发REAL/STRING见首节。结构定义没有初值/保持/地址。方法二的空/非空GVT还支持已登记非空扁平结构，initial_value必须null；方法一结构引用新增走offline系列，旧table-check/build/apply不新增结构类型变量。已有结构成员名称走正规改名；类型/保持/地址和删除不在此普通add/set接口中。
+结构成员add只有op/name/data_type/comment；GVT新增标量还需initial_value字符串。BOOL/INT/DINT保持原规则，BOOL用ON/OFF，INT/DINT用规范十进制；s23 REAL/STRING见直接声明一节。结构定义没有初值/保持/地址。方法二的空/非空GVT还支持已登记非空扁平结构，含REAL/STRING的s24范围见首节，initial_value必须null；方法一结构引用新增走offline系列，旧table-check/build/apply不新增结构类型变量。已有结构成员名称走正规改名；类型/保持/地址和删除不在此普通add/set接口中。
 
 s20平面BOOL/INT/DINT结构可混合空/非空成员注释，两模式及[正规改名](structure-renaming.md)使用同一已观察默认模板。FB仅输出有注释成员的`name:=\x07comment`，是否追加`, `依据该成员在原定义中是否末项；末项无注释时可能保留尾随`, `，不能过滤后join、trim或删注释。全空注释仍为空初始化串；GVT使用其独立空串布局，不套FB语法。初值仍显式null；`=`/`#`原样保留，`(),:`等未观察注释语法、嵌套/数组及值初始化构造仍待。混合注释已完成正常保存、方法一完整候选对照、重开完整回读及组合/恢复0错误编译。
 

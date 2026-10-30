@@ -1,7 +1,6 @@
 """Registered, parsed named-type dependencies for explicit IDE additions."""
 
 from pathlib import Path
-import re
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import assert_hash
@@ -57,12 +56,13 @@ def catalog(project, requested, owner=None):
                 if not dtype:
                     raise BridgeError("Unresolved dependent type.")
                 visit(dtype, native_fb_reference=code == 256)
-            elif (
-                code == 2048
-                and isinstance(dtype, str)
-                and re.fullmatch(r"STRING<[1-9][0-9]{0,3}>", dtype)
-            ):
-                pass  # Existing bounded string member, initialized by the IDE.
+            elif code == 2048:
+                scalar = descriptor(dtype)
+                if scalar is None or scalar.code != code or scalar.canonical != dtype:
+                    raise BridgeError("Unsupported dependent type layout: " + str(dtype))
+                # Capacity belongs to the native STRING descriptor. Its
+                # recognition does not qualify a new initializer profile or
+                # assert that this capacity is supported by the target PLC.
             elif code not in (1, 4, 16, 32):
                 raise BridgeError("Unsupported dependent type layout: " + str(dtype))
         active.remove(key)

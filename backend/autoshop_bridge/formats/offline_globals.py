@@ -9,6 +9,7 @@ import struct
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import tables
 from autoshop_bridge.formats.scalar_types import descriptor
+from autoshop_bridge.formats.structure import flat_scalar_definition
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
@@ -16,12 +17,7 @@ PROFILE = "gvt-flat-structure-unallocated-v1"
 
 
 def _validate_structure(raw, name):
-    definition = tables.parse(raw, "stru")
-    if definition.name != name or not definition.rows:
-        raise BridgeError("Expected the exact nonempty structure definition.")
-    if any(row.type_code not in (1, 4, 16) or row.type_text not in (
-            "", tables.TYPES.get(row.type_code)) for row in definition.rows):
-        raise BridgeError("Only flat BOOL/INT/DINT structure members are supported.")
+    flat_scalar_definition(raw, name)
 
 
 def _text(value):

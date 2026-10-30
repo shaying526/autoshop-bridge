@@ -46,6 +46,17 @@ def fixtures(project):
                             (4, "command", "Command"), (16, "value", "Value")))
         (project / (name + ".stru")).write_bytes(b"AutoShop" + b"\0" * 40 + string(name)
             + struct.pack("<II", 64, 3) + rows)
+    for name in ("MixedScalarData", "BareScalarData"):
+        members = ((32, "", "rValue", "Real\x08value"),
+                   (2048, "STRING<20>", "sShort", ""),
+                   (1, "", "xReady", "Ready\x06On"),
+                   (2048, "STRING<128>", "sDefault", "First\r\nSecond"),
+                   (4, "", "iMode", ""), (16, "", "diCount", ""))
+        rows = b"".join(string(text) + struct.pack("<I", code) + string(member)
+                        + string(comment if name == "MixedScalarData" else "")
+                        for code, text, member, comment in members)
+        (project / (name + ".stru")).write_bytes(b"AutoShop" + b"\0" * 40 + string(name)
+            + struct.pack("<II", 64, len(members)) + rows)
     (project / "Globals.gvt").write_bytes(b"AutoShop" + b"\0" * 40 + struct.pack("<I", 1)
         + struct.pack("<II", 4, 4) + string("oldValue") + string("0")
         + struct.pack("<II", 257, 123456) + string("old declaration")
@@ -66,7 +77,8 @@ def fixtures(project):
     offset, end = empty_table.instance_segment(empty)
     (project / "Instances.fbi").write_bytes(empty[:offset] + struct.pack("<I", 2)
         + instance_records + empty[end:])
-    names = ("Logic.FB", "TimerBlock.FB", "MAIN.ST", "InputData.stru", "OutputData.stru", "Globals.gvt",
+    names = ("Logic.FB", "TimerBlock.FB", "MAIN.ST", "InputData.stru", "OutputData.stru",
+             "MixedScalarData.stru", "BareScalarData.stru", "Globals.gvt",
              "Calc.FC", "EmptyCalc.FC", "Instances.fbi", "LadderBlock.FB")
     xml = "<project>" + "".join('<file id="{}"><Caption>{}</Caption><FileName>{}</FileName></file>'.format(
         i, Path(name).stem, name) for i, name in enumerate(names)) + "</project>"
@@ -136,6 +148,14 @@ def run(output):
                         ("response", "OutputData", "INOUT", None),
                         ("rLocalValue", "REAL", "VAR", "1.250000"),
                         ("sLocalText", "STRING<20>", "VAR", '"Bridge text"'),
+                        ("stMixedLocal", "MixedScalarData", "VAR", None),
+                        ("stMixedInput", "MixedScalarData", "IN", None),
+                        ("stMixedOutput", "MixedScalarData", "OUT", None),
+                        ("stMixedInOut", "MixedScalarData", "INOUT", None),
+                        ("stBareLocal", "BareScalarData", "VAR", None),
+                        ("stBareInput", "BareScalarData", "IN", None),
+                        ("stBareOutput", "BareScalarData", "OUT", None),
+                        ("stBareInOut", "BareScalarData", "INOUT", None),
                         ("timerFirst", "TimerBlock", "VAR", None),
                         ("timerSecond", "TimerBlock", "VAR", None))]
                 declarations.extend([
@@ -162,7 +182,9 @@ def run(output):
                         data_type=dtype, comment="Synthetic global", initial_value=None)
                         for name, dtype in (("gRequest", "InputData"), ("gResponse", "OutputData"))]+[
                             dict(op="add", name="grRealValue", data_type="REAL", initial_value="1.250000", comment="Synthetic real"),
-                            dict(op="add", name="gsText", data_type="STRING<20>", initial_value='"Global text"', comment="Synthetic string")])])), encoding="utf-8")
+                            dict(op="add", name="gsText", data_type="STRING<20>", initial_value='"Global text"', comment="Synthetic string"),
+                            dict(op="add", name="gMixedScalar", data_type="MixedScalarData", initial_value=None, comment="Synthetic mixed structure"),
+                            dict(op="add", name="gBareScalar", data_type="BareScalarData", initial_value=None, comment="Synthetic bare structure")])])), encoding="utf-8")
                 assert cli(skill, "offline-export", "--project", project, "--workspace", work)["status"] == "exported"
                 assert cli(skill, "offline-check", "--workspace", work, "--changes", changes)["status"] == "checked"
                 built = cli(skill, "offline-build", "--workspace", work, "--changes", changes)
@@ -173,13 +195,25 @@ def run(output):
                               "--backup-root", output / ("backups-" + label), "--experimental")
                 assert applied["status"] == "applied"
                 block = fb.parse((project / "Logic.FB").read_bytes())
-                assert len(block.variables) == 11 and block.source == source.read_bytes()
-                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0]
+                assert len(block.variables) == 19 and block.source == source.read_bytes()
+                assert [row.fields[0] for row in block.variables] == [0, 0, 0, 3, 3, 0, 0,
+                    0, 1, 2, 3, 0, 1, 2, 3, 0, 0, 0, 0]
                 assert [(row.type_code, row.type_text, row.initial_raw, row.fields)
                     for row in block.variables[5:7]] == [
                         (32, "", "1.250000", (0, 1, 0xffffffff, 0)),
                         (2048, "STRING<20>", '"Bridge text"', (0, 1, 0xffffffff, 0))]
                 assert [row.as_dict(index + 5)["data_type"] for index, row in enumerate(block.variables[5:7])] == ["REAL", "STRING<20>"]
+                # Independent literal oracle for the saved native template:
+                # preserve declaration order/case, separators, CRLF and the
+                # trailing empty-member separator; never derive it with the codec.
+                mixed_initial = "(rValue:=\x07Real\x08value, xReady:=\x07Ready\x06On, sDefault:=\x07First\r\nSecond, )"
+                for offset, dtype, initial in ((7, "MixedScalarData", mixed_initial), (11, "BareScalarData", "")):
+                    for category, row in enumerate(block.variables[offset:offset+4]):
+                        assert (row.type_code, row.type_text, row.initial_raw, row.fields) == (
+                            64, dtype, initial, (category, 1, 0xffffffff, 0))
+                    definition = tables.parse((project / (dtype + ".stru")).read_bytes(), "stru")
+                    assert [(row.type_code, row.type_text) for row in definition.rows] == [
+                        (32, ""), (2048, "STRING<20>"), (1, ""), (2048, "STRING<128>"), (4, ""), (16, "")]
                 assert all(row.type_code == 256 and row.type_text == dtype
                     and row.initial_raw == "" and row.fields == (0, 1, 0xffffffff, 0)
                     for row, dtype in zip(block.variables[-4:], ("TIMERBLOCK", "TIMERBLOCK", "EXAMPLELIB.RISE", "LADDERBLOCK")))
@@ -187,17 +221,21 @@ def run(output):
                 assert block.line_count == 3 and block.line_table_count == 1
                 assert st.parse((project / "MAIN.ST").read_bytes()).source == source.read_bytes()
                 current = tables.parse((project / "Globals.gvt").read_bytes(), "gvt")
-                assert len(current.rows) == 5
+                assert len(current.rows) == 7
                 first = current.rows[0]
                 assert current.raw[first.start:first.end] == old_global.raw[old_row.start:old_row.end]
                 for row in current.rows[1:3]:
                     assert row.type_code == 64 and row.initial_raw == ""
                 for row in current.rows[1:]:
                     assert row.metadata["address_raw"] == 0xFFFFFFFF
-                assert [(row.type_code, row.type_text, row.initial_raw) for row in current.rows[3:]] == [
+                assert [(row.type_code, row.type_text, row.initial_raw) for row in current.rows[3:5]] == [
                     (32, "", "1.250000"), (2048, "STRING<20>", '"Global text"')]
-                assert [row.document()["data_type"] for row in current.rows[3:]] == ["REAL", "STRING<20>"]
-                assert current.rows[-1].metadata["string_descriptor_code_raw"] == 2048
+                assert [row.document()["data_type"] for row in current.rows[3:5]] == ["REAL", "STRING<20>"]
+                assert current.rows[4].metadata["string_descriptor_code_raw"] == 2048
+                for row, dtype in zip(current.rows[5:], ("MixedScalarData", "BareScalarData")):
+                    assert (row.type_code, row.type_text, row.initial_raw) == (64, dtype, "")
+                    assert row.metadata == dict(related_type_code=64, flags_raw=257,
+                        address_raw=0xffffffff, device_address_text="", trailing_fields_raw=[0, 0])
                 full_fc = fc.parse((project / "Calc.FC").read_bytes())
                 empty_fc = fc.parse((project / "EmptyCalc.FC").read_bytes())
                 assert len(full_fc.variables) == 3 and len(empty_fc.variables) == 4
@@ -300,8 +338,9 @@ def run(output):
                     "--expect-receipt-sha256", digest(receipt), "--backup-root", output / ("restore-" + label), "--experimental")
                 assert restored["status"] == "applied" and tree(project) == baseline
                 report["cases"].append(dict(case=label, status="passed", project=str(project),
-                    fb_variable_count=11, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
+                    fb_variable_count=19, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
                     real_string_scalars_verified=True,
+                    real_string_structure_defaults_verified=True,
                     local_and_global_library_ld_instances=True,
                     fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,
