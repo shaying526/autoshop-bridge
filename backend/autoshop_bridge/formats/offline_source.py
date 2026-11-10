@@ -201,6 +201,16 @@ def rebuild_preserved_row_fb(raw: bytes, source: bytes, *, profile: str) -> byte
     original = fb.parse(raw)
     if source == original.source:
         return raw
+    if original.line_table_count == 0:
+        # Only the exact new LiteST blank layout can parse with zero rows.
+        # Its first normal one-line save adds one neutral row.
+        candidate = raw[:original.length_offset] + fb.first_body_record(source) + raw[-4:]
+        verified = fb.parse(candidate)
+        if (verified.source != source or verified.line_table_count != 1
+                or verified.variable_document() != original.variable_document()
+                or verified.payload_offset != original.payload_offset):
+            raise BridgeError("First LiteST body failed complete readback.")
+        return candidate
     old_end = original.payload_offset + original.payload_length
     candidate = (
         raw[: original.length_offset]

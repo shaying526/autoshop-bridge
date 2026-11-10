@@ -33,6 +33,10 @@ def parser() -> argparse.ArgumentParser:
     cmd.add_argument("--project", required=True, type=Path)
     cmd.add_argument("--table", required=True)
     cmd.add_argument("--instance", required=True)
+    cmd.add_argument("--physical-select", action="store_true",
+                     help="Move the real mouse pointer and single-click the exact instance row before reading or editing initial values; explicit opt-in")
+    cmd.add_argument("--member-path", dest="member_paths", action="append",
+                     help="Explicit relative structure/FB member path to expose; repeat for multiple paths")
     cmd.add_argument("--pid", type=int)
     cmd.add_argument("--open", dest="open_if_missing", action="store_true")
     cmd.add_argument("--output", type=Path)
@@ -51,6 +55,16 @@ def parser() -> argparse.ArgumentParser:
     cmd = commands.add_parser("offline-export", help="Freeze direct-HCP project baseline into an external workspace")
     cmd.add_argument("--project", required=True, type=Path)
     cmd.add_argument("--workspace", required=True, type=Path)
+    cmd = commands.add_parser("offline-fb-plan", help="Preflight creation of a LiteST FB in a closed project")
+    cmd.add_argument("--project", required=True, type=Path)
+    cmd.add_argument("--name", required=True)
+    cmd.add_argument("--comment", default="", help="One line of plain comment text; omit for a blank FB")
+    cmd.add_argument("--output", required=True, type=Path)
+    cmd = commands.add_parser("offline-fb-create", help="Apply a reviewed closed-project LiteST FB creation plan")
+    cmd.add_argument("--plan-file", required=True, type=Path)
+    cmd.add_argument("--expect-plan-sha256", dest="expected_plan_sha256", required=True)
+    cmd.add_argument("--backup-root", required=True, type=Path)
+    cmd.add_argument("--experimental", action="store_true")
     for name in ("offline-check", "offline-build"):
         cmd = commands.add_parser(name, help="Qualify existing registered offline targets" if name.endswith("check") else "Build hash-bound offline project candidates")
         cmd.add_argument("--workspace", required=True, type=Path)
@@ -98,6 +112,9 @@ def parser() -> argparse.ArgumentParser:
         cmd.add_argument("--experimental", action="store_true")
         cmd.add_argument("--dry-run", action="store_true")
         cmd.add_argument("--backup-root", type=Path)
+        if name == "instances-editor-edit":
+            cmd.add_argument("--physical-select", action="store_true",
+                             help="Move the real mouse pointer and single-click the exact instance row before reading or editing initial values; explicit opt-in")
     cmd = commands.add_parser(
         "object-dialog", help="Inspect the already-open normal new-program dialog"
     )
@@ -444,7 +461,15 @@ def main(argv=None) -> int:
 def _dispatch(args):
     command = args.pop("command")
     try:
-        if command.startswith("structure-rename-"):
+        if command in ("offline-fb-plan", "offline-fb-create"):
+            from autoshop_bridge.workflows import offline_fb_creation
+            if command == "offline-fb-plan":
+                result = offline_fb_creation.plan(**args)
+            else:
+                if not args.pop("experimental"):
+                    raise BridgeError("LiteST FB creation requires --experimental and a closed project.")
+                result = offline_fb_creation.apply(**args)
+        elif command.startswith("structure-rename-"):
             from autoshop_bridge.workflows import structure_rename
             if command.endswith("apply") and not args.pop("experimental"):
                 raise BridgeError("Structure rename apply requires --experimental and a closed project.")

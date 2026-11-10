@@ -5,16 +5,69 @@ local FB probes cover VAR/IN/OUT/INOUT and BOOL/INT/DINT record codes;
 support for editing remains narrower than the read-only record decoder.
 """
 
+import re
 import struct
 from dataclasses import dataclass
 from typing import Tuple
 
 from autoshop_bridge.errors import BridgeError
-from autoshop_bridge.formats.st import Container, MAX_NATIVE_SIZE, parse as parse_st
+from autoshop_bridge.formats.st import Container, MAX_NATIVE_SIZE, encode, parse as parse_st, validate_text
 
 PROFILE = "autoshop-fb-embedded-st-v1-experimental"
-BUILTIN_TYPES = {1: "BOOL", 4: "INT", 16: "DINT", 32: "REAL"}
+BUILTIN_TYPES = {1: "BOOL", 4: "INT", 16: "DINT", 32: "REAL", 8192: "BYTE", 4096: "IP"}
 CATEGORIES = {0: "VAR", 1: "IN", 2: "OUT", 3: "INOUT"}
+
+# V4.11.0.5 normal LiteST creation, verified against a blank FB and the
+# same FB saved with a single comment. These prefixes contain no name or body.
+_NEW_OUTER = bytes.fromhex(
+    "4175746f53686f70000000000000000000000000362e300000362e3000000063"
+    "6c516f6274716100000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000000400ffff01000800434c56544974656d000000000100000000"
+    "0000000000000180010000000100000000000000000000018002000000010000"
+    "00000000000000000180020000000100000000000000000000"
+)
+_NEW_INNER = bytes.fromhex(
+    "4175746f53686f70000000000000000000000000362e310000362e3000000063"
+    "6c516f6274716100000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000004000180000000000100000000000000000000018001000000"
+    "0100000000000000000000018002000000010000000000000000000001800200"
+    "00000100000000000000000000"
+)
+_NEW_BLANK_INNER = _NEW_INNER + bytes(12)
+
+
+def first_body_record(source):
+    """The observed first save emits a single zero-metadata row."""
+    validate_text(source)
+    if not source or b"\n" in source or len(source) > MAX_NATIVE_SIZE:
+        raise BridgeError("The first body written to a blank LiteST FB must be one nonempty line.")
+    return struct.pack("<I", len(source)) + encode(source) + struct.pack("<II", 0, 1) + bytes(16)
+
+
+def new_litest(name, source=b""):
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,126}", name):
+        raise BridgeError("LiteST creation requires a short ASCII identifier.")
+    encoded = name.encode("ascii")
+    inner = _NEW_INNER + first_body_record(source) if source else _NEW_BLANK_INNER
+    raw = (_NEW_OUTER + bytes([len(encoded)]) + encoded + struct.pack("<III", 256, 0, 0)
+           + inner + bytes(4))
+    result = parse(raw)
+    if result.program_name != name or result.variables or result.source != source:
+        raise BridgeError("New LiteST FB failed complete readback.")
+    return raw
+
+
+def array_comment_display(text):
+    """Display only the observed FB ARRAY comment escapes; keep native raw text.
+
+    Normal BYTE/IP ARRAY additions saved brackets and comma as bytes 1/2/5.
+    Other controls and other container/type profiles are not inferred here.
+    """
+    return text.replace("\x01", "[").replace("\x02", "]").replace("\x05", ",")
 
 
 class Reader:
@@ -199,9 +252,15 @@ def parse(raw: bytes) -> FBContainer:
                 # the old row table. Read both counts; never regenerate it.
                 inner = parse_st(raw[offset:-4], allow_line_count_mismatch=True)
             except BridgeError:
-                inner = None
+                if raw.startswith(_NEW_OUTER) and raw[offset:-4] == _NEW_BLANK_INNER:
+                    length = len(_NEW_INNER)
+                    inner = Container(_NEW_BLANK_INNER, length, length + 4, 0, b"", 0)
+                else:
+                    inner = None
             if inner is not None:
                 for start, name, rows in variable_tables(raw, offset - 4):
+                    if inner.line_table_count == 0 and start != len(_NEW_OUTER):
+                        continue
                     found.append(FBContainer(raw, offset, inner, start, name, rows))
                     if len(found) > 1:
                         raise BridgeError(

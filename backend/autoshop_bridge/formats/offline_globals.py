@@ -9,15 +9,19 @@ import struct
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.formats import tables
 from autoshop_bridge.formats.scalar_types import descriptor
-from autoshop_bridge.formats.structure import flat_scalar_definition
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
 from autoshop_bridge.formats.st import MAX_NATIVE_SIZE
 from autoshop_bridge.projects.identifiers import precheck_addition_names
 
-PROFILE = "gvt-flat-structure-unallocated-v1"
+PROFILE = "gvt-registered-structure-root-unallocated-v1"
 
 
 def _validate_structure(raw, name):
-    flat_scalar_definition(raw, name)
+    # Normal saves of ARRAY/nested-containing roots still serialize only the
+    # exact root name and an empty initializer. No child defaults or business
+    # dependency graph are constructed; all definition bytes stay frozen by
+    # the workflow. Shared flat/default and rename helpers remain strict.
+    tables.registered_structure_definition(name, {name: raw})
 
 
 def _text(value):
@@ -32,7 +36,7 @@ def _text(value):
 
 
 def rebuild(raw, operations, structure_definitions=None):
-    """Build exact GVT set/scalar-add/flat-structure-add candidates.
+    """Build exact GVT set/scalar-add/registered-root-add candidates.
 
     Structure additions require initial_value=null, producing the observed empty
     native initializer. They use flags 257, address FFFFFFFF, no device mapping,
@@ -60,7 +64,9 @@ def rebuild(raw, operations, structure_definitions=None):
             if not tables.identifier(op["name"]) or any(
                     row.name.casefold() == op["name"].casefold() for row in table.rows):
                 raise BridgeError("Invalid/duplicate GVT variable name.")
-            if descriptor(op["data_type"]) is None:
+            scalar = descriptor(op["data_type"])
+            array = array_descriptor(op["data_type"]) if scalar is None else None
+            if scalar is None and array is None:
                 name = op["data_type"]
                 if name not in definitions or op["initial_value"] is not None:
                     raise BridgeError("Structure add requires a known definition and null initializer.")
@@ -75,8 +81,9 @@ def rebuild(raw, operations, structure_definitions=None):
                 result = (result[:pos] + struct.pack("<I", len(table.rows) + 1)
                           + result[pos + 4:] + record)
             else:
-                _text(op["initial_value"])
-                result = table.rebuild([op])
+                if array is None:
+                    _text(op["initial_value"])
+                result = table.rebuild([op], structure_definitions=definitions)
         elif op.get("op") == "set":
             if set(op) != {"op", "name", "field", "expected", "value"}:
                 raise BridgeError("GVT set requires exact field/baseline/value.")

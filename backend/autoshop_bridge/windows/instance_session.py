@@ -6,9 +6,10 @@ import stat
 import re
 from pathlib import Path
 from autoshop_bridge.formats import instances
+from autoshop_bridge.formats.scalar_types import descriptor as scalar_descriptor
 from autoshop_bridge.projects import types as type_context
 from autoshop_bridge.projects.identifiers import precheck_addition_names
-from autoshop_bridge.errors import BridgeError
+from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import (
     regular_file,
@@ -40,6 +41,35 @@ INSTANCE_COLUMNS = dict(
 # in an independent copy. Registration/type/hash/backup checks remain mandatory.
 EMPTY_INSTANCE_ADDITIONS_VALIDATED = True
 
+INITIAL_COLUMNS = dict(name="变量名", initial_value="初始值", data_type="类型", comment="注释",
+                       full_name="全名", device_address="软元件地址", allocated_address="分配地址")
+# V4.11.0.5 normal single-toggle observations, EV08 param / WpCoordComp.
+# These are measured depth profiles; no spacing formula is inferred.
+INITIAL_GLYPH_OFFSETS = {1: 19, 2: 32}
+
+
+def initial_member_paths(paths):
+    """Validate relative dot paths before performing any editor operation."""
+    if paths is None:
+        return ()
+    if not isinstance(paths, (list, tuple)) or len(paths) > 128:
+        raise BridgeError("Expected at most 128 explicit initial-value member paths.")
+    result = []
+    for path in paths:
+        if (not isinstance(path, str) or not path or len(path) > 1024
+                or any(not part.isidentifier() for part in path.split("."))):
+            raise BridgeError("Initial-value member paths require dot-separated identifiers; ARRAY indices are not supported.")
+        if path.casefold() not in {item.casefold() for item in result}:
+            result.append(path)
+    return tuple(result)
+
+
+def assert_initial_scalar(row, member=None):
+    if scalar_descriptor(row["data_type"]) is None or row["initial_value"] == "...":
+        raise BridgeError("Composite initial-value cells require an explicit scalar member leaf.")
+    if member is not None and "." in member and row["data_type"] not in ("BOOL", "INT", "DINT", "REAL"):
+        raise BridgeError("Nested initial-value leaf editing is currently validated only for BOOL/INT/DINT/REAL.")
+
 
 def normalize(raw):
     rows, names, ids = [], set(), set()
@@ -62,6 +92,8 @@ def normalize(raw):
 
 
 class WindowsInstanceSession(WindowsTableSession):
+    initial_member_paths_supported = True
+    physical_initial_selection = False
     def __init__(self, project, program, pid=None):
         super().__init__(project, program, "gvt", pid)
         self.columns = INSTANCE_COLUMNS
@@ -147,67 +179,394 @@ class WindowsInstanceSession(WindowsTableSession):
             self.locate_editor()
         return self.grid()
 
-    def _initial_grid(self):
+    def _initial_toolbox_grids(self):
+        """Observe optional cold toolbox state without selecting/committing it."""
         self.validate_handles()
         grids = []
         for handle in self.children(self.main):
-            if self.class_name(handle) != "VSFlexGrid8N" or not self.user.IsWindowVisible(handle):
+            if not self.user.IsWindowVisible(handle):
+                continue
+            kind = self.class_name(handle)
+            if kind != "VSFlexGrid8N" and not kind.startswith("ATL:"):
                 continue
             parent = self.user.GetParent(handle)
             while parent and parent != self.main:
                 if self.text(parent) == "工具箱":
+                    if kind.startswith("ATL:"):
+                        raise BridgeError("An instance member initial-value cell is being edited; finish/cancel it first.")
                     grids.append(handle)
                     break
                 parent = self.user.GetParent(parent)
+        if len(grids) > 1:
+            raise BridgeError("Multiple visible instance initial-value toolbox grids are unsupported.")
+        return grids
+
+    def _initial_grid(self):
+        grids = self._initial_toolbox_grids()
         if len(grids) != 1:
             raise BridgeError("Expected one visible instance initial-value toolbox grid.")
         return grids[0]
 
+    def _initial_frame(self, grid, instance):
+        offset, result, identity = 0, [], None
+        while True:
+            page = self.accessible("instance_initial_page", grid, variable=instance, instance=instance, offset=offset, limit=64)
+            if (not isinstance(page, dict) or page.get("schema") != 1
+                    or page.get("scope") != "fbi_initial_physical_page" or page.get("instance") != instance
+                    or page.get("columns") != list(INITIAL_COLUMNS.values())
+                    or page.get("offset") != offset or page.get("limit") != 64
+                    or page.get("boundary_stable") is not True or page.get("native_values_used") is not False
+                    or type(page.get("physical_data_rows")) is not int or not 1 <= page["physical_data_rows"] <= 4096
+                    or page.get("accessible_children") != page["physical_data_rows"] + 8
+                    or not isinstance(page.get("root_row"), list) or len(page["root_row"]) != 7
+                    or any(not isinstance(v, str) for v in page["root_row"])
+                    or not isinstance(page.get("rows"), list)
+                    or len(page["rows"]) != min(64, page["physical_data_rows"] - offset)):
+                raise BridgeError("Incomplete/inconsistent FBI initial-value physical page.")
+            current = (page["physical_data_rows"], page["accessible_children"], page["root_row"])
+            if identity is not None and current != identity:
+                raise BridgeError("FBI initial-value page identity changed.")
+            identity = current
+            for index, item in enumerate(page["rows"], offset):
+                if (not isinstance(item, dict) or set(item) != {"physical_index", "values", "row_height", "name_height"}
+                        or type(item["physical_index"]) is not int or item["physical_index"] != index
+                        or not isinstance(item["values"], list) or len(item["values"]) != 7
+                        or any(not isinstance(v, str) for v in item["values"])
+                        or any(type(item[k]) is not int or item[k] < 0 for k in ("row_height", "name_height"))):
+                    raise BridgeError("FBI initial-value physical row differs.")
+                result.append(item)
+            offset += len(page["rows"])
+            if offset == identity[0]:
+                if result[0]["values"] != identity[2]:
+                    raise BridgeError("FBI initial-value root page differs.")
+                return dict(total=identity[0], root=identity[2], rows=result)
+
     def _initial_rows(self, grid, instance):
-        value = self.accessible("instance_initial_read", grid, variable=instance)
-        columns = dict(name="变量名", initial_value="初始值", data_type="类型", comment="注释",
-                       full_name="全名", device_address="软元件地址", allocated_address="分配地址")
-        if (not isinstance(value, dict) or set(value) != {"schema", "scope", "instance", "rows"}
-                or value["schema"] != 1 or value["scope"] != "selected_instance_initial_members"
-                or value["instance"] != instance or not isinstance(value["rows"], list)
-                or not 1 <= len(value["rows"]) <= 4096):
-            raise BridgeError("Unsupported instance initial-value snapshot.")
-        rows = []
-        for row in value["rows"]:
-            if (not isinstance(row, dict) or set(row) != set(columns.values())
-                    or any(not isinstance(text, str) for text in row.values())):
-                raise BridgeError("Unsupported instance initial-value columns.")
-            rows.append({key: row[label] for key, label in columns.items()})
-        names = [row["full_name"].casefold() for row in rows]
-        if (names[0] != instance.casefold() or len(set(names)) != len(names)
-                or any(not (name.startswith(instance.casefold() + ".") or name.startswith(instance.casefold() + "[")) for name in names[1:])):
-            raise BridgeError("Instance initial-value member identities differ.")
+        first = self._initial_frame(grid, instance)
+        if self._initial_frame(grid, instance) != first:
+            raise BridgeError("FBI initial-value complete collection changed between passes.")
+        rows, names = [], set()
+        for item in first["rows"]:
+            values = item["values"]
+            if all(value == "" for value in values):
+                if item["row_height"] != 1 or item["name_height"] != 1:
+                    raise BridgeError("Unknown empty initial-value physical slot profile.")
+                continue
+            row = dict(zip(INITIAL_COLUMNS, values)); full = row["full_name"].casefold()
+            if (not row["name"] or not full or full in names
+                    or (not rows and full != instance.casefold())
+                    or (rows and not (full.startswith(instance.casefold()+".") or full.startswith(instance.casefold()+"[")))):
+                raise BridgeError("FBI initial-value member identities differ.")
+            rows.append(row); names.add(full)
+        if not rows or first["rows"][0]["values"][4].casefold() != instance.casefold():
+            raise BridgeError("FBI initial-value physical root is missing.")
+        self._initial_checkpoint = first
+        self.last_initial_read = dict(complete=True, paged=True, page_size=64, complete_passes=2,
+                                      physical_data_rows=first["total"], named_rows=len(rows),
+                                      placeholder_rows=first["total"]-len(rows), atomic_snapshot=False,
+                                      native_values_used=False)
         return rows
 
-    def initial_members(self, instance):
-        grid = self._initial_grid()
-        if any(self.class_name(h).startswith("ATL:") and self.user.IsWindowVisible(h) for h in self.children(grid)):
-            raise BridgeError("An instance member initial-value cell is being edited; finish/cancel it first.")
+    def _initial_step(self, grid, instance, full, action):
+        frame = self._initial_checkpoint
+        matches = [r for r in frame["rows"] if r["values"][4].casefold() == full.casefold()]
+        if len(matches) != 1:
+            raise BridgeError("Expected one physical initial-value member.")
+        item = matches[0]; index = item["physical_index"]
+        checkpoint = dict(variable=instance, instance=instance, physical_data_rows=frame["total"], physical_index=index,
+                          target_column=0 if action == "expand_once" else 1,
+                          expected_root=frame["root"], expected_row=item["values"],
+                          expected_before=frame["rows"][index-1]["values"] if index else None,
+                          expected_after=frame["rows"][index+1]["values"] if index+1 < frame["total"] else None)
+        if action == "expand_once":
+            depth = len(full.split("."))-1
+            if depth not in INITIAL_GLYPH_OFFSETS:
+                raise BridgeError("Initial-value expansion glyph geometry is not validated for this depth.")
+            checkpoint["glyph_offset_x"] = INITIAL_GLYPH_OFFSETS[depth]
+        self._prepare_initial_interaction(grid)
+        step, dispatched, reveals = "observe", False, 0
+        record = dict(instance=instance, full_name=full, action=action, steps=[],
+                      interaction_preparation=copy.deepcopy(getattr(self, "last_initial_interaction", {})))
+        self.last_initial_step = record
+        while True:
+            receipt = self.accessible("instance_initial_step", grid, step=step, **checkpoint)
+            record["steps"].append(copy.deepcopy(receipt))
+            if (not isinstance(receipt, dict) or receipt.get("schema") != 1
+                    or receipt.get("status") != "fbi_initial_step" or receipt.get("instance") != instance
+                    or receipt.get("step") != step or receipt.get("stop") is not False
+                    or receipt.get("post_guard_error") is not None or receipt.get("native_values_used") is not False
+                    or receipt.get("physical_data_rows") != frame["total"] or receipt.get("physical_index") != index
+                    or receipt.get("root_row") != frame["root"] or receipt.get("observed_row") != item["values"]):
+                raise BridgeError("FBI initial-value step identity/baseline differs.")
+            scroll, click = receipt.get("scroll_dispatched_once"), receipt.get("click_dispatched_once")
+            phases = {"observe": {"observed"}, "reveal_one": {"scroll_dispatched" if scroll else "visible_observed"},
+                      "select_once": {"selection_dispatched", "selection_verified"} if click else {"already_selected_observed"},
+                      "expand_once": {"expansion_dispatched"}}
+            if (type(scroll) is not bool or type(click) is not bool or scroll and click
+                    or type(receipt.get("visible_observed")) is not bool
+                    or type(receipt.get("selection_verified")) is not bool
+                    or type(receipt.get("needs_observe")) is not bool
+                    or receipt.get("phase") not in phases[step]
+                    or receipt["needs_observe"] != (scroll or (click and not receipt["selection_verified"]) or step == "expand_once")
+                    or any(receipt.get(key) != item[key] for key in ("row_height", "name_height"))
+                    or scroll and step != "reveal_one" or click and step != action):
+                raise BridgeError("FBI initial-value step dispatch receipt differs.")
+            if click and action == "expand_once":
+                return receipt
+            if scroll or click:
+                step = "observe"
+                continue
+            if action == "select_once" and receipt["selection_verified"] and receipt["visible_observed"]:
+                return receipt
+            if dispatched:
+                raise BridgeError("FBI initial-value selection pending after one click; do not repeat.")
+            if receipt["visible_observed"]:
+                step, dispatched = action, True
+            else:
+                reveals += 1
+                if reveals > frame["total"] + 7:
+                    raise BridgeError("Bounded initial-value reveal did not expose the member.")
+                step = "reveal_one"
+
+    def _prepare_initial_interaction(self, grid):
+        """One foreground request before acting on the exact toolbox grid."""
+        identity = (self.main, self.pid, self.program_window, self.hwnd)
+        foreground = self.user.GetForegroundWindow
+        request = self.user.SetForegroundWindow
+        # Win64 HWNDs must not be truncated by ctypes' default int return.
+        if hasattr(foreground, "restype"):
+            foreground.argtypes = []
+            foreground.restype = ctypes.c_void_p
+            request.argtypes = [ctypes.c_void_p]
+            request.restype = ctypes.c_int
+
+        def guard():
+            if (self.main, self.pid, self.program_window, self.hwnd) != identity:
+                raise BridgeError("Initial-value interaction session handles changed.")
+            self.validate_handles()
+            self.assert_no_cell_edit()
+            if grid is None:
+                self._initial_toolbox_grids()  # Cold selection may have no toolbox yet.
+            elif self._initial_grid() != grid:
+                raise BridgeError("Initial-value interaction toolbox handle changed.")
+            if grid is not None and any(self.class_name(h).startswith("ATL:") and self.user.IsWindowVisible(h)
+                   for h in self.children(grid)):
+                raise BridgeError("An initial-value inline editor is active; finish or cancel it explicitly.")
+
+        guard()
+        modified = self.dirty()
+        self.restore_for_cell_edit()
+        self.activate()
+        guard()
+        record = dict(foreground_before=foreground(), request_dispatched_once=False,
+                      requested_main=self.main, dirty_before=modified, toolbox=grid,
+                      status="preparing", automatic_retry=False)
+        self.last_initial_interaction = record
+        if record["foreground_before"] != self.main:
+            record["request_dispatched_once"] = True
+            if not request(self.main):
+                record["status"] = "foreground_request_denied"
+                raise BridgeError("AutoShop foreground activation was denied; no initial-value action was dispatched.")
+            self.wait_until(lambda: foreground() == self.main, "exact AutoShop foreground observation")
+        guard()
+        if self.dirty() != modified or foreground() != self.main:
+            record["status"] = "stopped"
+            raise BridgeError("Initial-value interaction dirty state or foreground changed.")
+        record.update(status="foreground_verified", foreground_after=foreground(), dirty_after=modified)
+
+    def _physical_select_initial_instance(self, instance):
+        """Explicit, bounded preparation followed by one actual selection."""
+        target = getattr(self, "initial_native_target", None)
+        if target is None:
+            raise BridgeError("Physical initial selection requires an exact connected native target.")
+        target = regular_file(Path(target))
+        raw = target.read_bytes()
+        native_rows = instances.parse(raw)["instances"]
+        self._prepare_initial_interaction(None)
+        if target.read_bytes() != raw:
+            raise BridgeError("Native baseline changed during physical selection preparation.")
+        # One fresh full preimage after the nonediting window preparation. The
+        # full postimage is retained below; no declaration field is omitted.
+        rows = self.grid()
+        planned = getattr(self, "initial_selection_expected_rows", None)
+        if planned is None:
+            assert_native(raw, rows)
+        elif (rows != planned or sha256(raw) != getattr(self, "initial_selection_native_sha256", None)
+                or getattr(self, "initial_selection_native_names", []) != [row["name"] for row in native_rows]
+                or len(rows) != len(native_rows)
+                or any(row["data_type"] != native["data_type"] for row, native in zip(rows, native_rows))):
+            raise BridgeError("Planned current declarations/native prototype differ before physical selection.")
+        matches = [(index, row) for index, row in enumerate(rows) if row["name"] == instance]
+        if len(matches) != 1:
+            raise BridgeError("Physical selection requires one exact native instance name/type.")
+        index, expected = matches[0]
+        native_row = native_rows[index]
+        grid = self.variable_grid()
+        modified = self.dirty()
+        expected_row = [expected[key] for key in INSTANCE_COLUMNS]
+        expected_names = [row["name"] for row in rows]
+        common = dict(instance=instance, instance_type=native_row["data_type"], physical_select=True,
+                      physical_row=index+1, physical_rows=len(rows)+2, expected_row=expected_row, expected_names=expected_names)
+        aggregate = dict(schema=1, status="initial_instance_selection_preparing", physical_select=True,
+                         instance=instance, instance_type=native_row["data_type"], physical_row=index+1,
+                         physical_rows=len(rows)+2, native_sha256=sha256(raw), expected_names=expected_names,
+                         prepare_receipts=[], prepare_summary=dict(scroll_limit=64, helper_call_limit=129,
+                         helper_calls=0, observe_calls=0, reveal_requests=0, scroll_attempts_observed=0,
+                         scroll_dispatches_observed=0), physical_input_outcome="not_called",
+                         physical_move_attempts=0, click_attempts=0, send_input_calls=0, input_events_sent=0,
+                         stop=False, automatic_retry=False)
+        if not hasattr(self, "initial_physical_selection_receipts"):
+            self.initial_physical_selection_receipts = []
+        history_index = len(self.initial_physical_selection_receipts)
+        self.initial_physical_selection_receipts.append(aggregate)
+        self.last_initial_physical_selection = aggregate
+        summary = aggregate["prepare_summary"]
+
+        def guard():
+            if target.read_bytes() != raw or self.variable_grid() != grid or self.dirty() != modified:
+                raise BridgeError("Native/session/dirty baseline changed during physical selection preparation.")
+
+        try:
+            step = "observe"
+            while True:
+                guard()
+                if summary["helper_calls"] >= 129:
+                    raise BridgeError("Bounded physical declaration preparation exhausted its helper-call budget.")
+                if step == "reveal_one" and summary["reveal_requests"] >= 64:
+                    raise BridgeError("Bounded physical declaration preparation exhausted 64 scroll requests.")
+                summary["helper_calls"] += 1
+                summary["observe_calls" if step == "observe" else "reveal_requests"] += 1
+                try:
+                    receipt = self.accessible("prepare_initial_instance_step", grid, step=step, **common)
+                except BridgeError as exc:
+                    aggregate["prepare_transport_failure"] = dict(step=step, reply_received=False,
+                        error=str(exc), scroll_dispatch_unknown=step == "reveal_one")
+                    raise
+                aggregate["prepare_receipts"].append(copy.deepcopy(receipt))
+                if isinstance(receipt, dict):
+                    summary["scroll_attempts_observed"] += receipt.get("scroll_attempted_once") is True
+                    summary["scroll_dispatches_observed"] += receipt.get("scroll_dispatched_once") is True
+                guard()
+                if (not isinstance(receipt, dict) or receipt.get("schema") != 1
+                        or receipt.get("status") != "initial_instance_preparation_step"
+                        or receipt.get("instance") != instance or receipt.get("instance_type") != native_row["data_type"]
+                        or receipt.get("physical_row") != index+1 or receipt.get("physical_rows") != len(rows)+2
+                        or receipt.get("step") != step or receipt.get("stop") is not False
+                        or receipt.get("post_guard_error") is not None
+                        or receipt.get("before_row") != expected_row or receipt.get("after_row") != expected_row
+                        or receipt.get("before_names") != expected_names or receipt.get("after_names") != expected_names
+                        or type(receipt.get("visible_observed")) is not bool
+                        or type(receipt.get("scroll_attempted_once")) is not bool
+                        or type(receipt.get("scroll_dispatched_once")) is not bool
+                        or type(receipt.get("needs_observe")) is not bool
+                        or receipt["needs_observe"] != receipt["scroll_attempted_once"]
+                        or receipt.get("physical_select") is not True
+                        or any(type(receipt.get(key)) is not int or receipt[key] != 0 for key in (
+                            "physical_move_attempts", "click_attempts", "send_input_calls", "input_events_sent"))
+                        or receipt["scroll_dispatched_once"] and not receipt["scroll_attempted_once"]
+                        or step == "observe" and (receipt["scroll_attempted_once"] or receipt["scroll_dispatched_once"])):
+                    raise BridgeError("Physical declaration preparation receipt/baseline differs; do not repeat.")
+                if step == "observe" and receipt["visible_observed"]:
+                    break
+                step = "reveal_one" if step == "observe" else "observe"
+            guard()
+            # Once this helper starts, a lost response leaves physical dispatch
+            # unknown. Never infer zero input from an empty receipt or timeout.
+            aggregate.update(physical_input_outcome="unknown", final_selection_started=True,
+                             physical_move_attempts=None, click_attempts=None, send_input_calls=None, input_events_sent=None)
+            receipt = self.accessible("select_initial_instance", grid, **common)
+            actual_protocol = (isinstance(receipt, dict) and receipt.get("schema") == 1
+                               and receipt.get("status") == "initial_instance_physical_selection_dispatched")
+            final = copy.deepcopy(receipt) if actual_protocol else dict(raw_response=receipt,
+                    physical_move_attempts=None, click_attempts=None, send_input_calls=None, input_events_sent=None)
+            final.update(prepare_receipts=copy.deepcopy(aggregate["prepare_receipts"]),
+                         prepare_summary=copy.deepcopy(summary), native_sha256=sha256(raw),
+                         physical_input_outcome="actual_receipt" if actual_protocol else "unknown", final_selection_started=True)
+            self.initial_physical_selection_receipts[history_index] = final
+            self.last_initial_physical_selection = final
+            aggregate = final
+            valid = (isinstance(receipt, dict) and receipt.get("schema") == 1
+                     and receipt.get("status") == "initial_instance_physical_selection_dispatched"
+                     and receipt.get("instance") == instance and receipt.get("instance_type") == native_row["data_type"]
+                     and receipt.get("physical_row") == index+1 and receipt.get("physical_rows") == len(rows)+2
+                     and receipt.get("observed_row") == expected_row and receipt.get("stop") is False
+                     and receipt.get("post_guard_error") is None
+                     and all(type(receipt.get(key)) is int and receipt[key] == value for key, value in (
+                         ("physical_move_attempts", 1), ("click_attempts", 1), ("send_input_calls", 1), ("input_events_sent", 2)))
+                     and receipt.get("context_restored") is True and receipt.get("physical_select") is True
+                     and receipt.get("caller_target_dpi_matched") is True and receipt.get("input_event_flags") == [2, 4])
+            if not valid:
+                raise BridgeError("Physical initial selection stopped; inspect actual receipt, never repeat.")
+            guard()
+            if self.grid() != rows:
+                raise BridgeError("Physical initial selection changed complete declaration contents.")
+            guard()
+            return final
+        except BridgeError as exc:
+            aggregate.update(orchestration_stop=True, orchestration_error=str(exc), orchestration_status="stopped")
+            raise FormatRejection(str(exc), code="physical_initial_selection_stopped",
+                                  context=dict(physical_selection_receipt=copy.deepcopy(aggregate), automatic_retry=False)) from exc
+
+    def _expand_initial_paths(self, grid, instance, paths, rows):
+        for path in paths:
+            parts = path.split(".")
+            for length in range(1, len(parts)+1):
+                full = instance + "." + ".".join(parts[:length])
+                found = [r for r in rows if r["full_name"].casefold() == full.casefold()]
+                if len(found) != 1:
+                    raise BridgeError("Requested initial-value path is missing: " + full)
+                if scalar_descriptor(found[0]["data_type"]) is not None:
+                    if length < len(parts):
+                        raise BridgeError("Scalar initial-value path cannot have descendants.")
+                    continue
+                if "[" in found[0]["data_type"] or found[0]["data_type"].startswith("ARRAY"):
+                    raise BridgeError("ARRAY initial-value expansion is not supported.")
+                prefix = full.casefold()+"."
+                if any(r["full_name"].casefold().startswith(prefix) for r in rows):
+                    continue
+                before = copy.deepcopy(rows)
+                self._initial_step(grid, instance, full, "expand_once")
+                self.last_initial_expansions.append(copy.deepcopy(self.last_initial_step))
+                rows = self._initial_rows(grid, instance)
+                previous = {r["full_name"].casefold(): r for r in before}
+                current = {r["full_name"].casefold(): r for r in rows}
+                added = set(current) - set(previous)
+                if (not added or any(current.get(k) != r for k, r in previous.items())
+                        or any(not k.startswith(prefix) or "." in k[len(prefix):] for k in added)):
+                    raise BridgeError("Initial-value expansion changed existing members or failed to expose descendants.")
+        return rows
+
+    def initial_members(self, instance, member_paths=None):
+        paths = initial_member_paths(member_paths)
+        self.last_initial_expansions = []
+        self._initial_toolbox_grids()  # Zero grids is valid before the first FBI selection.
         self.restore_for_cell_edit()
         self.activate()
         self.assert_no_cell_edit()
-        if self.accessible("select_verified_cell", self.variable_grid(), variable=instance,
-                           column=self.columns["name"], expected=instance) != "selection_verified":
+        self._initial_toolbox_grids()
+        if self.physical_initial_selection:
+            self._physical_select_initial_instance(instance)
+        elif self.accessible("select_verified_cell", self.variable_grid(), variable=instance,
+                             column=self.columns["name"], expected=instance) != "selection_verified":
             raise BridgeError("Initial-value instance selection was not verified.")
-        return self._initial_rows(self._initial_grid(), instance)
+        grid = self._initial_grid()
+        rows = self._initial_rows(grid, instance)
+        if self.physical_initial_selection:
+            receipt = self.last_initial_physical_selection
+            if rows[0]["name"] != instance or rows[0]["data_type"].casefold() != receipt["instance_type"].casefold():
+                raise BridgeError("Actual toolbox root/name/type differs after physical selection.")
+        return self._expand_initial_paths(grid, instance, paths, rows)
 
-    def set_initial_member(self, instance, member, expected, value):
-        rows = self.initial_members(instance)
+    def set_initial_member(self, instance, member, expected, value, member_paths=None):
+        paths = initial_member_paths(member_paths if member_paths is not None else [member])
+        rows = self.initial_members(instance, paths)
         full = instance + "." + member
         matches = [row for row in rows[1:] if row["full_name"].casefold() == full.casefold()]
         if len(matches) != 1 or matches[0]["initial_value"] != expected:
             raise BridgeError("Initial-value member is not displayed or its baseline differs.")
-        if matches[0]["initial_value"] == "...":
-            raise BridgeError("Composite initial-value cells need a displayed member leaf; full native strings use the offline workflow.")
+        assert_initial_scalar(matches[0], member)
         grid = self._initial_grid()
-        if self.accessible("instance_initial_select", grid, variable=instance, column=member,
-                           expected=expected) != "initial_member_selection_verified":
-            raise BridgeError("Initial-value member selection was not verified.")
+        self._initial_step(grid, instance, full, "select_once")
         self.post(grid, 0x100, 113)
         self.post(grid, 0x101, 113)
         def controls():
@@ -256,6 +615,7 @@ def connect(project, table, pid=None, open_if_missing=False):
     row = matches[0]
     target = regular_file(Path(row["path"]))
     adapter = WindowsInstanceSession(Path(inventory["project"]), table, pid)
+    adapter.initial_native_target = target
     opened = adapter.ensure_open(open_if_missing)
     return adapter, target, opened, inventory
 

@@ -1,8 +1,52 @@
 # AutoShop Bridge Agent Skill
 
+## s34 本地修订
+
+`2026-11-10.s34 / CLI 1.03` 增加关闭工程创建空白或带一行注释的 LiteST FB。含数组成员的 GVT 普通结构根沿既有离线流程使用 AutoShop 默认初值。见[离线编辑](references/offline-editing.md)。
+
+## s33历史本地修订：FBI初值分页与显式成员路径
+
+本地修订`2026-11-02.s33 / CLI1.03`：开发CLI支持工具箱初值完整稀疏分页、显式结构／FB祖先路径展开与限定标量叶编辑；公共service35签名及包外90案例保持，物理选择为显式opt-in。请求与边界见[数据编辑](references/data-editing.md)，实际阶段范围见[验证说明](references/validation.md)。最终软件与ZIP结果以包外真实回执为准；仅本地，不安装或远端发布。
+
+## s32历史本地修订：FC已有类别与数值标量类型
+
+本地修订`2026-11-01.s32 / CLI1.03`。FC已有声明可明确修改`category`或`data_type`：输入记录原生类型CString须为空，类型限BOOL／INT／DINT／REAL，原类别须已识别；新类别限VAR／IN／OUT／INOUT，新类型限上述四种。正常界面独立对照仅VAR→OUT、INT→REAL，其余组合仅合成检查。
+
+文件与编辑器两模式的保存、跨会话完整六列／正文／原生回读已完成；组合编译于`2026-11-01 21:57:37`、恢复编译于`2026-11-01 22:13:13`各显示0错误／9588行。最终67份原件、独立59份源码及192文件集合和全部SHA均精确恢复，关闭观察与严格停止分别留证。FBI嵌套路径仅布局观察，尚未实现。
+
+完整软件测试及ZIP最终结果只由随后包外真实回执提供；本段不预填测试总数、包数量或构建结论。不安装、不远端发布。请求与限制见[数据编辑](references/data-editing.md)，阶段范围见[验证说明](references/validation.md)。
+
+## s31历史本地修订：FC普通结构与FB结构ARRAY递归默认
+
+拟议修订`2026-11-01.s31 / CLI1.03`。本轮限定原生验收、完整持久回读、组合／恢复0错误编译、正常关闭观察及最终原件恢复完成。最终完整软件、资源数量、manifest及ZIP结果以随后包外真实交付回执为准；本段不预填这些数值。仅本地，不安装或远端发布。
+
+FC普通已登记命名结构声明（code64），以及FB一／二维结构ARRAY中更深code64成员默认、含ARRAY成员子结构的默认表示。FC沿独立三尾记录，所有新增明确null，无FB式初值／保持字段；FB结构ARRAY沿独立value／comment模板，code64继续处理准确已识别子定义，code128成员省略并保留原位置分隔符，不生成其内部元素默认值。普通结构的根注释模板仍独立，GVT／STRU普通根不是这种默认生成。
+
+准确非空定义、真实选择器、全部可读定义哈希、未保存内容、唯一备份、CAS及旧记录／正文／不透明字节和完整回读保护保持。FC／GVT／STRU普通根只核准确身份，不递归证明成员业务合法性；FB只遍历实际code64默认依赖，省略的ARRAY不追业务元素图。FB递归格式以工作栈、活动类型路径及共享UTF-8预算实现；循环、错名／缺失／空定义、未知标量或注释语法拒绝。嵌套空注释关闭后不加07，标量空注释仍保留07；预算沿现有65533字节CString／容器边界，不是PLC容量规则。helper缺省及既有非递归模式、sharedflat和结构改名不扩。三维、IEC上下界、FB元素ARRAY、任意显式复杂初值、ARRAY成员内部元素默认构造、未知宿主记录、FC返回类型／FCI／FC中FB实例／通用新建FC仍另待。
+
+FC与FB均沿既有offline及editor-variables入口，明确`initial_value:null`。例如准确登记非空结构`NodeData`可用作FC普通根，`NodeData[2]`或`NodeData[2,2]`可用作FB结构ARRAY；类型存在性、原生身份与全部依赖字节须准确冻结，不把示例当默认工程。FC没有初值／保持列；FB普通结构根注释默认与ARRAY子值默认分开。
+
+正常FC三条VAR与FB八条ARRAY有独立完整wire／手写默认对照，正式两模式空／非空及四类别另行留证。本次组合编译FCI伴随不透明三字节变化按精确前后原像单例审查并最终恢复，未将它解释为地址或增加FCI编辑能力。辅助脚本派发前失败、严格释放HCP停止与另行独立原像审查／45秒续作保留各自证据，不反写旧阶段为通过。空表声明区折叠时公共几何保护仍停止；正常展开布局并完整重读后另阶段续作，不忽略guard或宣称Computer Use恢复。UI隐藏值、显示预览与原生默认分别保留；公共签名与权限边界保持。详见[分阶段验证](references/validation.md)。
+
 [English](#english) | [简体中文](#简体中文)
 
 ## English
+
+Previous s30 native-gate record (historical) **2026-11-01.s30 / CLI 1.03** adds ordinary registered named members in existing nonempty STRU tables and ordinary GVT references to registered structures containing ARRAY or nested members. STRU native coverage is nonempty only in both modes; GVT covers empty/nonempty tables in both modes. STRU members have no initializer/category/address fields; GVT additions require JSON null and retain the observed empty native initializer. These are exact-root references, separate from FB default expansion; no recursive business-dependency proof is required. Definition freezing, old-record/body/opaque-byte preservation, unique backups, complete readback and project CAS remain required. Scoped native acceptance and final restoration are complete: original67, independent59 sources and all192 file hashes equal the batch baseline. At this native-gate checkpoint, final full software regression and packaging had not started; actual build, manifest and ZIP results belong to the later external receipt. No installation or remote release is included. See [staged validation](references/validation.md).
+
+The original combination trial reported one real compiler error for four missing global `::` prefixes. Its failed capture remains preserved. A bounded source correction and a separate compile at **2026-11-01 15:41:37** reported **0 errors / 9596 lines**; a separate recovery compile at **2026-11-01 16:28:23** reported **0 errors / 9588 lines**. Scoped native acceptance and restoration are complete; final software and ZIP gates remain separate.
+
+Historical local s29 scope **2026-11-01.s29 / CLI 1.03 / 91 files** adds bounded FB defaults in all four categories, with explicit JSON null initializers. Ordinary structure defaults retain root comment slots for identified nested-structure and ARRAY members without generating their values. One/two-dimensional ARRAYs of nested structures use a separate value/comment template, expanding exactly one nested level whose frozen child definition is an observed flat-scalar profile. Deeper nesting, ARRAY children, unknown descriptors/defaults and explicit complex initializers require separate evidence. GVT ordinary structures, direct named STRU additions and structure-renaming eligibility keep their prior strict scope. Native text and hidden UI previews remain separate observations. Actual construction and native/software/ZIP verification belong to the external receipt; no installation or remote release is included. Installed/public s24 and historical s28 evidence remain separate. The source contract and synthetic inventory/fingerprint remain outside the portable package; public signatures stay at 35.
+
+Nested-default assembly uses a UTF-8 byte budget bounded by the existing writer's 65,533-byte CString ceiling and native-container limit. Dimension wrappers are reserved before root/child appends; oversized output is rejected before a large intermediate string is built. These are existing file-format/memory bounds, without a new PLC-capacity or member-count policy.
+
+Historical local s28 scope **2026-10-31.s28 / CLI 1.03** adds bounded default construction for one/two-dimensional FB ARRAYs of registered flat structures containing BYTE/IP scalar members, plus observed special member comments in ordinary/ARRAY templates. Both modes cover all four FB categories with explicit JSON null initializers. Native raw values, hidden UI text and previews remain separate observations. Nested defaults, three dimensions, explicit bounds, FB elements and explicit complex initializers remain outside scope. Exact native/software/compilation results belong to this batch's external receipt. This is local only; installed/public s24 and original s27/s26/s25 evidence remain separate. Source contract r39 and its actual synthetic inventory/fingerprint stay outside the portable package; public signatures remain 35.
+
+Historical local s27 scope **2026-10-31.s27 / CLI 1.03** adds one/two-dimensional BYTE and IP ARRAYs in both modes for FB, FC, structure members and GVT, plus ordinary references to registered flat structures containing BYTE/IP members in all four FB categories and GVT. These additions use explicit JSON null initializers; structure members have no category/initializer fields, and FC has no native initializer. New scalar-member defaults inside structure ARRAYs, unknown nested defaults, three dimensions, explicit bounds and FB elements remain outside this scope. EtherNet/IP exported tags can impose additional type constraints; AutoShop compilation checks engineering semantics, without changing network configuration. Native/software/compilation results belong to the final external receipt. This is local only, with no installation or remote release. Source contract r38 (77 synthetic cases, 35 signatures) stays outside the portable package; s26/s25 evidence retains its original scope.
+
+Historical local s26 scope **2026-10-31.s26 / CLI 1.03** adds direct BYTE/IP declarations in both modes for FB, FC, structure members and global tables. FB supports all four categories; initializers are explicit strings for FB VAR/IN/OUT and GVT, JSON null for FB INOUT and FC, and absent for structure members. Defaults are BYTE `0` and IP `192.168.1.0`; GVT displays 8/32 bits. BYTE/IP ARRAYs and unobserved complex-default construction remain unsupported. Scoped native acceptance and final software results belong in this batch’s receipt outside the package. This is a local candidate, with no installation or remote release; completed s25 evidence and installed/public s24 remain separate. Source contract r37 (73 cases, 35 signatures) is not shipped in the portable package.
+
+FB ARRAY comment display and append/save readback follow the observed IDE representation while preserving raw snapshots. Other hosts and unknown encodings retain their existing boundaries.
 
 ## **Let AI read and edit Inovance AutoShop projects directly!**
 
@@ -91,6 +135,8 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 ### Version notes
 
+Scoped native acceptance is complete for s25 ARRAY additions in both modes and associated FB structure-array initializer-key renames. Full readback, separate backend/normal-UI controls and the final restored baseline passed zero-error compilation and guarded close observation on Windows 10 / AutoShop V4.11.0.5. Final software verification results belong in this delivery's receipt outside the package; these controls do not establish the cause or repair of historical control faults. See [staged validation](references/validation.md).
+
 Edit existing FBI instance names, comments and initial values in either mode. Editor Mode also adds library and registered LD FB instances; both modes support mixed structure member comments. File edits preserve references for the caller; IDE renames report AutoShop's actual reference changes. See [usage](references/data-editing.md#fbi已有实例编辑) and [validation](references/validation.md).
 
 s18 adds offline global FBI instances of registered project FBs, including first declarations and batch appends in qualified containers. AI supplies body/reference edits; see [validation](references/validation.md).
@@ -107,7 +153,7 @@ s13 includes the MIT license in the complete package and integrity manifest; bac
 
 s12 adds existing structure member renames with associated native initializer-key updates. Source references remain under the caller’s control.
 
-Backend **1.03** · Skill **2026-10-29.s20**. Detailed operation limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md).
+Backend **1.03** · Historical local Skill **2026-10-31.s28**; scoped native acceptance and final software results are established by this batch’s external receipt. The following s25 entries retain their historical scope. Final software verification results are recorded in this delivery's receipt outside the package; the manifest and `check_bundle` establish the actual resource inventory and integrity. Installed/public distribution remains **2026-10-30.s24 / 89 files**. This delivery is local only, with no installation or remote release. Detailed limits and evidence: [capabilities](references/capabilities.md), [validation](references/validation.md). The other entries in this section record earlier revisions.
 
 s11 adds scalar FC declarations in both modes, including the first variables of an empty table. Independent AutoShop copies passed save/reopen/full-readback and zero-error compilation. FC additions require `initial_value: null`; offline edits preserve the complete body and existing records.
 
@@ -116,6 +162,40 @@ s10 fixes stale-mirror rejection in the explicit body registration-receipt route
 s9 fixes a conservative rejection of literal `=` in structure-member comments. Independent AutoShop V4.11.0.5 copies verified INOUT ports and structured globals through IDE saves, offline writes, full readback and zero-error compilation. Other unobserved delimiters and nonzero unknown ST row fields remain rejected; a multi-target request can still be blocked elsewhere. See [offline editing](references/offline-editing.md).
 
 ## 简体中文
+
+## s30历史本地候选：STRU命名成员与GVT普通结构引用（限定原生验收与恢复已完成）
+
+拟议修订为`2026-11-01.s30 / CLI1.03`。三项限定原生验收、跨会话完整回读、恢复编译及最终恢复已完成：67份原件、独立59份源码和192文件集合／全部SHA均与本批基线一致；各本轮正常关闭45秒存活及精确进程事件分别留证。本段记录原生门禁完成时的状态：最终完整软件回归尚未开始，尚未构建本批包；资源数量、manifest及ZIP须由随后实际构建和包外最终回执确认，不以历史测试数或旧包清单代替。不安装、不远端发布，已安装／公开记录仍分开。范围与阶段见[分阶段验证](references/validation.md)。
+
+新增范围分为三项：已有非空STRU中新增准确登记的普通命名结构成员；GVT新增含ARRAY成员结构的普通根引用；GVT新增含嵌套结构成员结构的普通根引用。STRU的两模式原生证据限已有非空结构，不提供空STRU容器构造或首成员新增资格；GVT覆盖两模式空／非空表。这里写入普通根类型记录，不展开子成员默认值，不沿业务依赖图递归证明类型或引用正确；FB中既有一层嵌套ARRAY默认构造仍是独立profile，不能混同为GVT／STRU初始化语法。
+
+STRU新增仅有`op/name/data_type/comment`，没有`category/initial_value`、保持或地址字段；GVT结构新增必须显式`initial_value:null`，已观察保存原生初值为空。准确非空根定义、类型code/text和真实选择器核对、可读定义哈希冻结、原记录／正文／不透明字节、未保存内容、唯一备份、全工程并发CAS与完整原生／实际UI回读保护保持。GVT展开监视行与根声明分别读取；`...`预览不代替初值。工具不生成／复制地址，不添加CSV写入器，也不扩大结构改名、FC返回类型、深层默认、子ARRAY展开、三维／显式上下界或任意显式复杂初值范围。
+
+首次组合验证真实编译有1错误：验证正文四处全局变量引用缺少`::`。原失败及其生成物缺失状态保留；限定修正正文后另一次编译在`2026-11-01 15:41:37`显示0错误、9596行。新结果不把首次失败改为通过，恢复编译另于`2026-11-01 16:28:23`显示0错误、9588行；限定原生及最终67／59／192恢复核对已完成，最终完整软件回归与ZIP仍另验。本地未安装、未远端发布；已安装／公开记录仍与本地候选分开。
+
+以下s29及更早段落保留历史范围；当前三项普通引用资格仅由本节细化，不把旧FB默认展开或历史通过移作本批完整验收。
+
+## s28历史本地候选：FB结构ARRAY默认与特殊成员注释
+
+s28历史本地候选为`2026-10-31.s28 / CLI1.03`，本批范围为含BYTE/IP标量成员的已登记扁平结构在FB一/二维ARRAY中的默认构造，以及已观察结构成员特殊注释在普通/ARRAY初始化模板中的保留。两模式沿现有入口覆盖VAR/IN/OUT/INOUT，新增统一传`initial_value:null`；默认由限定原生profile生成，不由调用者拼接复杂初值。具体原生、软件验证和编译结果以包外本批最终回执为准；不安装、不远端发布，实际安装/公开仍s24。本地s27/s26/s25及原失败证据保持原范围。
+
+定义内BYTE/IP直接成员继续没有category或initial_value字段。要求准确登记、根定义哈希冻结及各成员布局完整识别；身份、未保存内容、并发、唯一备份、旧记录/正文/不透明字节、完整原生及实际UI回读保护保持。普通结构的UI隐藏初值与原生全文可能不同，ARRAY在本批profile中另行核对，不能把隐藏栏或`...`预览当作原生串。
+
+未知嵌套默认、三维、显式上下界、FB元素、任意显式复杂初值、未知控制字符及其他宿主新默认语法不扩张。EtherNet/IP导出等工程语义交AutoShop编译检查，不自动修改网络配置或推算地址。源码契约1.2.0/r39及合成示例在包外维护；实际案例数和代码指纹以源码契约JSON为准，35个公共签名保持，合成验证不等于原生验收。
+
+以下s27及更早章节是历史范围；旧限制仅由本节明确新增范围细化，旧成功不改标签为s28。
+
+FB ARRAY注释显示及新增保存回读已按正常IDE表示核验，原生快照保持原串；其他宿主及未知编码边界保持。
+
+s27历史本地候选为`2026-10-31.s27 / CLI1.03`，仅本地校验，不安装或远端发布；s26/s25原交付及验证记录保留，实际安装/公开仍s24。具体原生、软件验证和编译结果以包外本批最终回执为准，资源数量与完整性以实际manifest和check_bundle为准。
+
+两种模式支持BYTE与IP元素的一/二维ARRAY，在LiteST FB、FC、STRU直接成员及GVT分别沿各宿主独立profile执行；例如`BYTE[2]`、`BYTE[2,3]`、`IP[2]`、`IP[2,3]`。另支持准确登记、含BYTE/IP成员的扁平结构普通引用：FB VAR/IN/OUT/INOUT与GVT。继承s26直接标量及s25既有ARRAY范围，不重复把旧能力列为本批新实现。新ARRAY和普通结构引用均明确`initial_value:null`；STRU成员仅op/name/data_type/comment，没有category或initial_value。FC保留独立三尾字段且没有原生初值，不由此开放FC普通结构引用。FB数值ARRAY和GVT ARRAY沿已观察空原生默认，普通结构FB注释默认与GVT空原生默认分开核对；实际隐藏值、预览及原生串各自完整读取，不从位长、预览或标量IP默认值推算数组布局。含BYTE/IP标量成员的结构ARRAY默认构造、未知nested默认、三维、显式上下界、FB元素ARRAY及任意显式复杂初始化不由本批开放。保留准确类型/登记、定义哈希、未保存状态、并发、唯一备份、原记录/正文/不透明字节、完整回读和非目标保护；写出、保存、重开回读及编译分别记证。EtherNet/IP导出标签等工程配置对成员类型另有语义限制，声明格式受支持不等于所有网络对象均可编译；语义交AutoShop编译检查，不自动更改业务网络配置，也不通过猜地址、改UI映像或修改缓存绕过完整回读。源码契约1.2.0/r38、77合成案例/35公共签名在包外维护，不在portable包内；合成验证不代替原生保存、持久回读或编译验收。
+
+以下s26/s25及更早内容保留各自历史范围；旧限制仅由上述明确新范围细化，旧成功不追认为s27成功。
+
+s26历史本地修订为`2026-10-31.s26 / CLI1.03`，不安装、不云端发布；本地s25已完成并保留历史证据，实际安装/公开仍为s24。具体原生、软件验证和编译结果以包外本批回执为准，资源数量与完整性以实际manifest和check_bundle为准。
+
+两模式支持FB四类别、FC、STRU直接成员及GVT的BYTE/IP新增。BYTE原生类型码8192、IP4096，IDE默认分别为`0`和`192.168.1.0`；GVT位长8/32。FB VAR/IN/OUT及GVT用明确字符串初值，FB INOUT及全部FC用JSON null；FC没有原生独立初值字段，STRU直接成员没有category/initial_value。IP沿已观察ATL文本控件写入并完整回读原文，不转换为推算地址。共享descriptor不开放BYTE/IP ARRAY或含这些成员结构的默认构造，未知复杂默认串仍准确报告未实现。源码契约r37/73案例/35签名不随portable包交付。
 
 ## **让 AI 直接读写汇川 AutoShop 工程！**
 
@@ -204,6 +284,8 @@ python -B "$skill/examples/offline_smoke.py" --output $out
 
 ### 版本记录
 
+s25两模式已识别ARRAY新增及FB结构数组默认成员键关联改名的限定原生验收完成：完整回读、后台/正常界面对照及最终恢复基线分别编译0错误，关闭观察与事件审计通过。最终软件校验结果以本次包外交付回执为准，不能由新对照推定历史控件故障根因已修。适用本机Windows10 / AutoShop V4.11.0.5，详见[分阶段验证](references/validation.md)。
+
 两种模式可编辑FBI已有实例的名称、注释和初值；编辑器模式可新增库及已登记LD类型实例，扁平结构支持混合空/非空成员注释。文件模式由调用者处理引用，编辑器模式记录IDE实际引用更新；见[用法](references/data-editing.md#fbi已有实例编辑)和[验收](references/validation.md)。
 
 s18补齐方法一全局FBI项目FB实例的空表首项和批量追加，保留已有记录、容器和未分配地址保护；正文由AI组织，见[验收](references/validation.md)。
@@ -220,7 +302,7 @@ s13将MIT许可证纳入完整包及校验清单，后台功能保持。
 
 s12增加已有结构成员改名与必要原生初始化键同步；正文引用由调用者处理。
 
-后台 **1.03** · Skill **2026-10-29.s20**。具体操作范围和验证证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)。
+后台 **1.03** · s28历史本地Skill **2026-10-31.s28**，限定原生验收及最终软件结果见包外本批回执；以下s25记录保持各自历史范围；最终软件校验结果以本次包外交付回执为准，资源数量及完整性以实际manifest和`check_bundle`为准。实际安装/公开仍为 **2026-10-30.s24 / 89文件**，本轮仅本地交付，不安装、不远端发布。具体范围和证据见[能力表](references/capabilities.md)、[验收说明](references/validation.md)；本节其他条目保留前版历史。
 
 s11补齐FC两种模式的标量声明新增，包含空表首项/第二项。独立AutoShop副本已保存、重开、完整回读并全部编译0错误；初值必须null，文件模式保持完整正文及已有记录。
 

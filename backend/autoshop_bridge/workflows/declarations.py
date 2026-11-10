@@ -55,7 +55,7 @@ def read(native, output=None):
     else:
         definitions = [row.document() for row in tables.parse(raw, kind).rows]
     fields = ("name", "category", "category_code", "data_type", "type_code",
-              "type_text_raw", "comment", "initial_value_raw")
+              "type_text_raw", "comment", "initial_value_raw", "array_type_diagnostic")
     rows = [dict({key: definition[key] for key in fields if key in definition},
                  record_sha256=baseline["record_sha256"])
             for definition, baseline in zip(definitions, baselines)]

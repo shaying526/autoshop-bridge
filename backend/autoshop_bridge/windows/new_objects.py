@@ -10,9 +10,11 @@ from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError, ConflictError
 from autoshop_bridge.formats.native import parse
-from autoshop_bridge.formats.tables import parse as parse_table, comment_display, TYPES
+from autoshop_bridge.formats.tables import parse as parse_table, structure_comment_display, TYPES
 from autoshop_bridge.formats.scalar_types import descriptor, STRING_DEFAULT_LENGTH
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
 from autoshop_bridge.projects.inventory import bounded_read, scan, select_project
+from autoshop_bridge.projects.types import array_ui_type_matches
 from autoshop_bridge.storage import create_backup, regular_file, writable_target, sha256, write_json_new, write_new
 from autoshop_bridge.windows.creation import WindowsNewSTDialog, mirror_state
 
@@ -25,6 +27,8 @@ def require(value, message):
 
 
 def _member_ui_type_matches(requested, actual):
+    array=array_descriptor(requested)
+    if array is not None:return array_ui_type_matches(array,actual)
     scalar=descriptor(requested)
     if scalar is None:return actual==requested
     return (actual==scalar.canonical or
@@ -32,11 +36,20 @@ def _member_ui_type_matches(requested, actual):
 
 
 def _member_native_type_matches(requested, actual):
+    array=array_descriptor(requested)
+    if array is not None:return actual.type_code==128 and actual.type_text==array.canonical
     scalar=descriptor(requested)
     if scalar is None:return (actual.type_text or TYPES.get(actual.type_code))==requested
     if actual.type_code!=scalar.code:return False
     if scalar.string_length is not None:return actual.type_text==scalar.type_text
     return actual.type_text in ('',scalar.canonical)
+
+
+def _member_native_type_name(requested):
+    array=array_descriptor(requested)
+    if array is not None:return array.canonical
+    scalar=descriptor(requested)
+    return scalar.canonical if scalar is not None else requested
 
 
 def _saved_mirror_changed(mirror, before):
@@ -275,17 +288,19 @@ class WindowsObjectCreation:
             else:
                 from autoshop_bridge.windows.table_session import WindowsTableSession, assert_native_table
                 a = WindowsTableSession(self.project, target.stem, 'stru', self.pid)
-                obj = parse_table(raw, 'stru'); rows = a.grid(); assert_native_table(obj, rows)
+                obj = parse_table(raw, 'stru'); rows = a.grid()
+                array_names={member['name'] for member in plan['initial']['members']
+                             if array_descriptor(member['data_type']) is not None}
+                assert_native_table(obj, rows,strict_array_names=array_names)
                 expected = plan['initial']['members']
-                actual = [dict(name=r.name, data_type=r.type_text or TYPES.get(r.type_code), comment=comment_display(r.comment)) for r in obj.rows]
-                expected_native = [dict(row, data_type=descriptor(row['data_type']).canonical
-                                        if descriptor(row['data_type']) is not None else row['data_type'],
-                                        comment=comment_display(row['comment'])) for row in expected]
+                actual = [dict(name=r.name, data_type=r.type_text or TYPES.get(r.type_code), comment=structure_comment_display(r.comment)) for r in obj.rows]
+                expected_native = [dict(row, data_type=_member_native_type_name(row['data_type']),
+                                        comment=structure_comment_display(row['comment'])) for row in expected]
                 native_matches=(obj.name==target.stem and actual==expected_native
                                 and all(_member_native_type_matches(member['data_type'],row)
                                         for member,row in zip(expected,obj.rows)))
                 editor_matches=(len(rows)==len(expected) and all(
-                    row['name']==member['name'] and row['comment']==comment_display(member['comment'])
+                    row['name']==member['name'] and row['comment']==structure_comment_display(member['comment'])
                     and _member_ui_type_matches(member['data_type'],row['data_type'])
                     for member,row in zip(expected,rows)))
                 result.update(saved=not a.dirty(), member_count=len(rows),
@@ -374,7 +389,7 @@ def initialize_default_member(adapter, before, member):
             'Exact software-created initial member required')
     current = copy.deepcopy(before)
     for field, value in (('name', member['name']), ('data_type', member['data_type']),
-                         ('comment', comment_display(member['comment']))):
+                         ('comment', structure_comment_display(member['comment']))):
         old = current[0][field]
         if value == old: continue
         identity = current[0]['name']

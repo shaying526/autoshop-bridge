@@ -9,7 +9,11 @@ import re
 from typing import Optional
 
 
-_PRIMITIVE_CODES = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32}
+_PRIMITIVE_CODES = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32,
+                    "BYTE": 8192, "IP": 4096}
+# Standalone recognition must not qualify new ARRAY element layouts.
+ARRAY_ELEMENT_CODES = frozenset((1, 4, 16, 32, 2048, 4096, 8192))
+BYTE_IP_CODES = frozenset((8192, 4096))
 STRING_DEFAULT_LENGTH = 128  # Normal V4.11.0.5 Define String dialog, 2026-10-29.
 MAX_NATIVE_TYPE_TEXT = 512  # Existing FB/FC/STRU record reader boundary.
 

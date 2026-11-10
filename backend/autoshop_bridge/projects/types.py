@@ -4,12 +4,32 @@ from pathlib import Path
 from autoshop_bridge.errors import BridgeError
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import assert_hash
-from autoshop_bridge.formats.scalar_types import descriptor
+from autoshop_bridge.formats.scalar_types import descriptor, ARRAY_ELEMENT_CODES
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
 
-SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32}
+SCALARS = {"BOOL": 1, "INT": 4, "DINT": 16, "REAL": 32, "BYTE": 8192, "IP": 4096}
+
+
+def builtin_array(name):
+    array = array_descriptor(name)
+    element=descriptor(array.element_type) if array is not None else None
+    return array if element is not None and element.code in ARRAY_ELEMENT_CODES else None
+
+
+def structure_array(name):
+    array=array_descriptor(name)
+    return array if array is not None and descriptor(array.element_type) is None else None
+
+
+def array_ui_type_matches(array,display):
+    if display==array.canonical:return True
+    element=descriptor(array.element_type)
+    return (element is not None and element.code==2048 and element.string_length==128
+            and display=='STRING['+','.join(map(str,array.dimensions))+']')
 
 
 def selector_name(name):
+    if array_descriptor(name) is not None:return 'ARRAY'
     scalar=descriptor(name)
     return 'STRING' if scalar is not None and scalar.string_length is not None else name
 
@@ -26,7 +46,7 @@ def catalog(project, requested, owner=None):
     types, hashes, active = {}, {}, set()
 
     def visit(name, native_fb_reference=False):
-        if descriptor(name) is not None:
+        if descriptor(name) is not None or builtin_array(name) is not None:
             return
         key = name.casefold()
         if key in active or (owner and key == owner.casefold()):
@@ -63,8 +83,10 @@ def catalog(project, requested, owner=None):
                 # Capacity belongs to the native STRING descriptor. Its
                 # recognition does not qualify a new initializer profile or
                 # assert that this capacity is supported by the target PLC.
-            elif code not in (1, 4, 16, 32):
-                raise BridgeError("Unsupported dependent type layout: " + str(dtype))
+            else:
+                scalar = descriptor(dtype)
+                if scalar is None or scalar.code != code or scalar.canonical != dtype:
+                    raise BridgeError("Unsupported dependent type layout: " + str(dtype))
         active.remove(key)
         types[name] = dict(
             code=64 if row["kind"] == "structure" else 256, path=row["path"]
@@ -111,14 +133,16 @@ def ide_catalog(project, requested, owner=None, *, target=None, fb_only=False):
             raise BridgeError("Invalid Unicode in named IDE type.") from exc
         if size > 512:
             raise BridgeError("Expected an exact named IDE type.")
-        if descriptor(name) is not None:
+        if descriptor(name) is not None or builtin_array(name) is not None:
             continue
-        matches = definitions.get(name.casefold(), [])
+        array=structure_array(name)
+        root_name=array.element_type if array is not None else name
+        matches = definitions.get(root_name.casefold(), [])
         if len(matches) > 1:
             raise BridgeError("Ambiguous registered type name: " + name)
         if matches:
             row = matches[0]
-            if Path(row["path"]).stem != name:
+            if Path(row["path"]).stem != root_name:
                 raise BridgeError("Named IDE type must match the exact registered spelling: " + name)
             if row.get("status") != "parsed" and not (
                 row["kind"] == "function_block"
@@ -128,8 +152,15 @@ def ide_catalog(project, requested, owner=None, *, target=None, fb_only=False):
                 raise BridgeError("Registered IDE type identity/layout is not identified: " + name)
             if not row.get("sha256"):
                 raise BridgeError("Registered IDE type has no readable baseline: " + name)
-            types[name] = dict(code=64 if row["kind"] == "structure" else 256,
-                               path=row["path"], source="registered_project")
+            if array is not None:
+                if row['kind']!='structure':raise BridgeError('ARRAY element must be an exact registered project structure: '+root_name)
+                types[name]=dict(code=128,element_code=64,element_type=root_name,
+                    array_canonical=array.canonical,path=row['path'],source='registered_project')
+            else:
+                types[name] = dict(code=64 if row["kind"] == "structure" else 256,
+                                   path=row["path"], source="registered_project")
+        elif array is not None:
+            raise BridgeError('ARRAY element must be an exact registered project structure: '+root_name)
         elif len(name.split(".")) > 1 and all(part.isidentifier() for part in name.split(".")):
             types[name] = dict(code=256 if fb_only else "ide_resolved", source="qualified_ide_selector")
         else:

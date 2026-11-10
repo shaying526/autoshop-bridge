@@ -24,6 +24,7 @@ from autoshop_bridge.formats.offline_source import (
 )
 from autoshop_bridge.formats.offline_variables import rebuild_fb, FBInstanceType
 from autoshop_bridge.formats.scalar_types import descriptor
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
 from autoshop_bridge.projects import inventory, deletion_preflight
 from autoshop_bridge.projects.offline_guard import exclusive_hcp, OfflineProjectUnavailable, error_code
 from autoshop_bridge.projects.identifiers import precheck_addition_names, require_new_identifier
@@ -344,7 +345,7 @@ def default_candidate_builder(entry, raw, source, definitions):
         return rebuild_fold_row_st(raw, source, profile=ST_FOLD_ROWS_V1)
     if suffix == ".fc":
         from autoshop_bridge.formats.offline_fc import rebuild
-        result = rebuild(raw, operations) if operations else raw
+        result = rebuild(raw, operations, structure_definitions=definitions) if operations else raw
         return rebuild_zero_row_fc(result, source, profile=FC_ZERO_ROWS_V1) if source is not None else result
     if suffix == ".gvt" and source is None and "variable_operations" in entry:
         from autoshop_bridge.formats.offline_globals import rebuild
@@ -354,7 +355,7 @@ def default_candidate_builder(entry, raw, source, definitions):
         return rebuild(raw, entry["variable_operations"], definitions)
     if suffix == ".stru" and source is None and "variable_operations" in entry:
         try:
-            return tables.parse(raw, "stru").rebuild(entry["variable_operations"])
+            return tables.parse(raw, "stru").rebuild(entry["variable_operations"], structure_definitions=definitions)
         except UnicodeError as exc:
             raise BridgeError("Invalid Unicode in offline structure declaration.") from exc
     raise BridgeError("No proven default offline builder for this target/operation.")
@@ -482,7 +483,10 @@ def _qualify(manifest, blobs, entries, candidate_builder=None):
             if not isinstance(op, dict):
                 raise BridgeError("Each variable operation must be an object.")
             if op.get("op") == "add":
-                if str(op.get("data_type", "")).casefold() in changed_structures:
+                dtype = str(op.get("data_type", ""))
+                array = array_descriptor(dtype)
+                definition_name = array.element_type if array is not None else dtype
+                if definition_name.casefold() in changed_structures:
                     raise BridgeError("Editing a structure and adding a reference to it in one batch is unsupported.")
                 require_new_identifier(op.get("name"), existing_names=global_names if suffix in (".gvt", ".fbi") else local_names,
                                        project_names=project_names if suffix in (".gvt", ".fbi") else ())

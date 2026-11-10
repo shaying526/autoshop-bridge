@@ -144,8 +144,12 @@ public static class BridgeAccessibility {
  }
  sealed class GridSource:IBridgeGridSource {
   readonly Node root;List<Node> children;
+  readonly bool physicalSparse;
+  readonly Dictionary<int,Node> physicalCells=new Dictionary<int,Node>();
   readonly Dictionary<int,List<Node>> cells=new Dictionary<int,List<Node>>();
+  readonly Dictionary<int,Node> fullNames=new Dictionary<int,Node>();
   public GridSource(Node root){this.root=root;}
+  public GridSource(Node root,bool physicalSparse){this.root=root;this.physicalSparse=physicalSparse;}
   public int ChildCount{get{return root.ChildCount;}}
   static List<Node> Snapshot(Node parent){
    int count=parent.ChildCount;
@@ -161,8 +165,33 @@ public static class BridgeAccessibility {
    return children[index];
   }
   public Node Cell(int child,int column){
+   if(physicalSparse){
+    int key=child*32+column;Node value;if(physicalCells.TryGetValue(key,out value))return value;
+    Node parent=Child(child);int count=parent.ChildCount;
+    if(column<0 || column>=count)throw new Exception("Physical sparse column is outside bounds");
+    value=parent.ChildAt(column);
+    if(parent.ChildCount!=count)throw new Exception("Physical sparse row count changed during range snapshot");
+    // Cache only the actual marshalled Node. Every property remains live.
+    physicalCells.Add(key,value);return value;
+   }
    List<Node> row;
-   if(!cells.TryGetValue(child,out row)){row=Snapshot(Child(child));cells.Add(child,row);}
+   if(cells.TryGetValue(child,out row)){
+    if(column<0 || column>=row.Count)throw new Exception("Cell column is outside snapshot bounds");
+    return row[column];
+   }
+   // Expanded monitor members only contribute their real full-name field to
+   // the declaration proof. Ask AccessibleChildren for that actual one-item
+   // range instead of materializing seventeen unused COM interfaces per row.
+   // ChildAt returns the marshaller's Node/child ID; no IDs are inferred.
+   if(column==17){
+    Node value;if(fullNames.TryGetValue(child,out value))return value;
+    Node parent=Child(child);int count=parent.ChildCount;
+    if(column>=count)throw new Exception("Cell column is outside snapshot bounds");
+    value=parent.ChildAt(column);
+    if(parent.ChildCount!=count)throw new Exception("Accessibility children changed during range snapshot");
+    fullNames.Add(child,value);return value;
+   }
+   row=Snapshot(Child(child));cells.Add(child,row);
    if(column<0 || column>=row.Count)throw new Exception("Cell column is outside snapshot bounds");
    return row[column];
   }
@@ -245,10 +274,16 @@ public static class BridgeAccessibility {
    }
    if(found.Count!=1)throw new Exception("Cell changed during reveal");
    Node cell=found[0];
-   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   if(RevealStep(target,cell,root))return cell;
+   System.Threading.Thread.Sleep(20);
+  }
+  throw new Exception("Could not reveal variable cell by targeted scrolling");
+ }
+ static bool RevealStep(IntPtr target,Node cell,Node grid){
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);grid.Object.accLocation(out gx,out gy,out gw,out gh,0);
    if(gh<=20)throw new Exception("Variable declaration area is collapsed or too short to show data rows; expand the declaration pane before editing. grid=["+gx+","+gy+","+gw+","+gh+"], cell=["+x+","+y+","+w+","+h+"]");
    int sx=x+w/2,sy=y+h/2;
-   if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)return cell;
+   if(w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && (cell.State&0x18000)==0)return true;
    if(w<=2 || h<=2)throw new Exception("Variable column is hidden");
    // MSAA can flag a partially clipped cell INVISIBLE even while its centre
    // remains in the grid. Choose the reveal axis/direction from actual edges,
@@ -265,9 +300,7 @@ public static class BridgeAccessibility {
     uint wheel=(above && !below) || sy<gy+20?0x00780000u:0xff880000u;
     Message(target,0x20a,new UIntPtr(wheel),new IntPtr(packed));
    }else throw new Exception("Variable cell is marked invisible/offscreen without a clipped edge; inspect the declaration pane before editing");
-   System.Threading.Thread.Sleep(20);
-  }
-  throw new Exception("Could not reveal variable cell by targeted scrolling");
+  return false;
  }
  static bool VisibleSelection(int state,int x,int y,int w,int h,int gx,int gy,int gw,int gh){
   int sx=x+w/2,sy=y+h/2;
@@ -283,6 +316,292 @@ public static class BridgeAccessibility {
   throw new Exception("Requested cell is not actually selected before timeout");
  }
  static readonly string[] InitialColumns={"变量名","初始值","类型","注释","全名","软元件地址","分配地址"};
+ sealed class InitialSource:IBridgeInitialSource {
+  readonly Node root;readonly Dictionary<int,Node> rows=new Dictionary<int,Node>();
+  readonly Dictionary<int,Node> cells=new Dictionary<int,Node>();
+  public InitialSource(Node root){this.root=root;}
+  Node Row(int child){Node row;if(!rows.TryGetValue(child,out row)){row=root.ChildAt(child);rows.Add(child,row);}return row;}
+  public Node Cell(int child,int column){int key=child*7+column;Node cell;if(!cells.TryGetValue(key,out cell)){cell=Row(child).ChildAt(column);cells.Add(key,cell);}return cell;}
+  public int ChildCount{get{return root.ChildCount;}}
+  public int Role(int child){return child<7?root.ChildAt(child).Role:Row(child).Role;}
+  public string Name(int child){return child<7?root.ChildAt(child).Name:Row(child).Name;}
+  public int CellCount(int child){return Row(child).ChildCount;}
+  public int CellRole(int child,int column){return Cell(child,column).Role;}
+  public string CellName(int child,int column){return Cell(child,column).Name;}
+  public string Value(int child,int column){return Cell(child,column).Value;}
+  static int Height(Node node){int x,y,w,h;node.Object.accLocation(out x,out y,out w,out h,node.Id);return h;}
+  public int RowHeight(int child){return Height(Row(child));}
+  public int NameHeight(int child){return Height(Cell(child,0));}
+ }
+ delegate bool InitialChildCallback(IntPtr child,IntPtr parameter);
+ [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,InitialChildCallback callback,IntPtr parameter);
+ [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr target);
+ static void AssertNoInitialEditor(IntPtr target){
+  bool active=IsWindowVisible(target) && Class(target).StartsWith("ATL:",StringComparison.Ordinal);int visited=0;
+  EnumChildWindows(target,delegate(IntPtr child,IntPtr parameter){
+   if(++visited>4096)return false;
+   if(IsWindowVisible(child) && Class(child).StartsWith("ATL:",StringComparison.Ordinal)){active=true;return false;}
+   return true;
+  },IntPtr.Zero);
+  if(visited>4096)throw new Exception("Initial-value child window inventory exceeds bounds");
+  if(active)throw new Exception("An initial-value inline editor is active; finish or cancel it explicitly");
+ }
+ static void ValidateInitial(IntPtr main,IntPtr target,int pid,string project){
+  uint actual;GetWindowThreadProcessId(main,out actual);if(actual!=pid)throw new Exception("Initial-value main process changed");
+  GetWindowThreadProcessId(target,out actual);string title=Text(main);
+  if(actual!=pid || !IsChild(main,target) || Class(target)!="VSFlexGrid8N" || !IsWindowEnabled(main) ||
+   !title.StartsWith("AutoShop V4.11.0.5  ",StringComparison.Ordinal) || title.IndexOf("  "+project+" - [",StringComparison.OrdinalIgnoreCase)<0)throw new Exception("Initial-value project/control differs");
+  bool toolbox=false;for(IntPtr p=GetParent(target);p!=IntPtr.Zero && p!=main;p=GetParent(p))if(Text(p)=="工具箱")toolbox=true;
+  if(!toolbox)throw new Exception("Initial-value grid is outside toolbox");
+  AssertNoInitialEditor(target);
+ }
+ public static object ReadInitialPage(long mainValue,long targetValue,int pid,string project,string instance,int offset,int limit){
+  return InvokeOwned(delegate{
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);ValidateInitial(main,target,pid,project);
+   object result=BridgeInitialGridReader.ReadPage(new InitialSource(Root(target)),instance,offset,limit);
+   ValidateInitial(main,target,pid,project);return result;
+  });
+ }
+ [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] static extern IntPtr GetThreadDpiAwarenessContext();
+ [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+ [DllImport("user32.dll")] static extern bool AreDpiAwarenessContextsEqual(IntPtr first,IntPtr second);
+ [DllImport("user32.dll",SetLastError=true)] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool LogicalToPhysicalPointForPerMonitorDPI(IntPtr window,ref Point point);
+ [DllImport("user32.dll")] static extern bool GetPhysicalCursorPos(out Point point);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool SetPhysicalCursorPos(int x,int y);
+ [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+ [StructLayout(LayoutKind.Sequential)] struct PhysicalMouse {public int X,Y;public uint Data,Flags,Time;public UIntPtr Extra;}
+ [StructLayout(LayoutKind.Sequential)] struct PhysicalKey {public ushort Key,Scan;public uint Flags,Time;public UIntPtr Extra;}
+ [StructLayout(LayoutKind.Sequential)] struct PhysicalHardware {public uint Message;public ushort Low,High;}
+ [StructLayout(LayoutKind.Explicit)] struct PhysicalPayload {
+  [FieldOffset(0)]public PhysicalMouse Mouse;[FieldOffset(0)]public PhysicalKey Key;[FieldOffset(0)]public PhysicalHardware Hardware;
+ }
+ [StructLayout(LayoutKind.Sequential)] struct PhysicalInput {public uint Type;public PhysicalPayload Payload;}
+ [DllImport("user32.dll",SetLastError=true)] static extern uint SendInput(uint count,PhysicalInput[] inputs,int size);
+ static void PhysicalInitialGuard(IntPtr main,IntPtr target,int pid,string project,string program){
+  Validate(main,target,pid,project,program,false);AssertNoInitialEditor(target);
+  if(GetForegroundWindow()!=main)throw new Exception("Physical FBI selection requires exact foreground AutoShop main");
+  var panes=new List<IntPtr>();int count=0;
+  EnumChildWindows(main,delegate(IntPtr child,IntPtr parameter){
+   if(++count>4096)return false;if(Text(child)=="工具箱" && IsWindowVisible(child))panes.Add(child);return true;
+  },IntPtr.Zero);
+  if(count>4096 || panes.Count>1)throw new Exception("Physical FBI toolbox inventory differs");
+  foreach(IntPtr pane in panes)AssertNoInitialEditor(pane);
+ }
+ static int[] PhysicalInitialCell(IntPtr main,IntPtr target,int pid,string project,string program,int physicalRows,int physicalRow,string instance,string type,string[] expected,out string[] observed,string[] expectedNames=null){
+  PhysicalInitialGuard(main,target,pid,project,program);
+  Node root=Root(target);GridSource source=new GridSource(root,true);
+  string[] names;
+  BridgeGridReader.CellAddress address=BridgeGridReader.InstanceSelectionCheckpoint(source,physicalRows,physicalRow,instance,type,expected,out observed,out names);
+  if(expectedNames!=null)SamePhysicalNames(names,expectedNames);
+  Node cell=source.Cell(address.DisplayChild,1),row=root.ChildAt(address.DisplayChild);
+  int x,y,w,h,gx,gy,gw,gh,rx,ry,rw,rh;
+  cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);row.Object.accLocation(out rx,out ry,out rw,out rh,row.Id);
+  int sx=x+w/2,sy=y+h/2;
+  if(w<=2 || h<=2 || rw<=2 || rh!=h || y!=ry || (cell.State&0x18000)!=0 || (row.State&0x18000)!=0 ||
+   sx<gx || sx>=gx+gw || sy<gy+20 || sy>=gy+gh || sx<rx || sx>=rx+rw || sy<ry || sy>=ry+rh)
+   throw new Exception("Physical FBI requested row/name cell is hidden or clipped; no physical action");
+  return new int[]{x,y,w,h,gx,gy,gw,gh,rx,ry,rw,rh};
+ }
+ static void SamePhysicalGeometry(int[] actual,int[] expected){
+  if(actual.Length!=expected.Length)throw new Exception("Physical FBI geometry shape changed");
+  for(int i=0;i<actual.Length;i++)if(actual[i]!=expected[i])throw new Exception("Physical FBI fresh row/cell/grid geometry changed");
+ }
+ static void SamePhysicalNames(string[] actual,string[] expected){
+  if(actual.Length!=expected.Length)throw new Exception("Physical FBI declaration count changed during reveal");
+  for(int i=0;i<actual.Length;i++)if(actual[i]!=expected[i])throw new Exception("Physical FBI declaration names/order changed during reveal");
+ }
+ public static object PrepareInitialInstanceStep(long mainValue,long targetValue,int pid,string project,string program,string instance,string type,int physicalRows,int physicalRow,string[] expected,string[] expectedNames,string step,bool physicalSelect){
+  return InvokeOwned(delegate{
+   if(!physicalSelect || (step!="observe" && step!="reveal_one") || expectedNames==null || expectedNames.Length!=physicalRows-2)
+    throw new Exception("Physical FBI preparation requires explicit opt-in, observe/reveal_one and complete fixed names");
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue),original=GetThreadDpiAwarenessContext(),targetContext=GetWindowDpiAwarenessContext(target);
+   var report=new Dictionary<string,object>{{"schema",1},{"status","initial_instance_preparation_step"},
+    {"instance",instance},{"instance_type",type},{"physical_row",physicalRow},{"physical_rows",physicalRows},{"step",step},
+    {"before_row",null},{"after_row",null},{"before_names",null},{"after_names",null},{"visible_observed",false},
+    {"scroll_attempted_once",false},{"scroll_dispatched_once",false},{"needs_observe",false},
+    {"stop",false},{"post_guard_error",null},{"physical_select",true},{"physical_move_attempts",0},{"click_attempts",0},
+    {"send_input_calls",0},{"input_events_sent",0},{"automatic_retry",false}};
+   bool attempted=false;
+   try{
+    if(original==IntPtr.Zero || targetContext==IntPtr.Zero || !AreDpiAwarenessContextsEqual(original,targetContext))throw new Exception("Physical FBI preparation caller/target DPI contexts differ");
+    PhysicalInitialGuard(main,target,pid,project,program);
+    Node root=Root(target);GridSource source=new GridSource(root,true);string[] before,names;
+    BridgeGridReader.CellAddress address=BridgeGridReader.InstanceSelectionCheckpoint(source,physicalRows,physicalRow,instance,type,expected,out before,out names);
+    report["before_row"]=before;report["before_names"]=names;SamePhysicalNames(names,expectedNames);
+    Node cell=source.Cell(address.DisplayChild,1),row=root.ChildAt(address.DisplayChild);
+    int x,y,w,h,gx,gy,gw,gh,rx,ry,rw,rh;
+    cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);row.Object.accLocation(out rx,out ry,out rw,out rh,row.Id);
+    int sx=x+w/2,sy=y+h/2;
+    bool visible=(cell.State&0x18000)==0 && (row.State&0x18000)==0 && w>2 && h>2 && rw>2 && rh==h && ry==y && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh && sx>=rx && sx<rx+rw && sy>=ry && sy<ry+rh;
+    report["visible_observed"]=visible;report["cell_rect"]=new int[]{x,y,w,h};report["grid_rect"]=new int[]{gx,gy,gw,gh};report["row_rect"]=new int[]{rx,ry,rw,rh};
+    if(step=="reveal_one" && !visible){
+     PhysicalInitialGuard(main,target,pid,project,program);
+     if(!AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),original) || !AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(target),targetContext))throw new Exception("Physical FBI DPI changed before one declaration scroll");
+     var keys=new Dictionary<string,object>();report["button_modifier_states"]=keys;
+     foreach(int key in new int[]{1,2,4,5,6,16,17,18,91,92}){int state=GetAsyncKeyState(key);keys[key.ToString()]=state;if((state&0x8000)!=0)throw new Exception("Physical FBI button/modifier down before declaration scroll");}
+     bool alreadyVisible=RevealInitialPoint(target,cell,root,-1,ref attempted);
+     report["scroll_attempted_once"]=attempted;report["scroll_dispatched_once"]=attempted;report["needs_observe"]=attempted;
+     if(alreadyVisible)throw new Exception("Physical FBI row/cell visibility differs; no scroll dispatched");
+    }
+    PhysicalInitialGuard(main,target,pid,project,program);
+    if(!AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),original) || !AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(target),targetContext))throw new Exception("Physical FBI DPI changed after preparation step");
+    string[] after,afterNames;
+    BridgeGridReader.InstanceSelectionCheckpoint(new GridSource(Root(target),true),physicalRows,physicalRow,instance,type,expected,out after,out afterNames);
+    report["after_row"]=after;report["after_names"]=afterNames;SamePhysicalNames(afterNames,expectedNames);
+   }catch(Exception error){report["stop"]=true;report["post_guard_error"]=error.Message;}
+   report["scroll_attempted_once"]=attempted;report["needs_observe"]=attempted;
+   return report;
+  });
+ }
+ public static object SelectInitialInstance(long mainValue,long targetValue,int pid,string project,string program,string instance,string type,int physicalRows,int physicalRow,string[] expected,bool physicalSelect,string[] expectedNames=null){
+  return InvokeOwned(delegate{
+   if(!physicalSelect)throw new Exception("Physical FBI selection requires explicit physical_select opt-in");
+   if(expectedNames==null || expectedNames.Length!=physicalRows-2)throw new Exception("Physical FBI selection requires the complete fixed declaration names");
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue),original=GetThreadDpiAwarenessContext(),targetContext=GetWindowDpiAwarenessContext(target);
+   if(original==IntPtr.Zero || targetContext==IntPtr.Zero || !AreDpiAwarenessContextsEqual(original,targetContext))throw new Exception("Physical FBI original caller/target DPI contexts differ");
+   var report=new Dictionary<string,object>{{"schema",1},{"status","initial_instance_physical_selection_dispatched"},
+    {"instance",instance},{"instance_type",type},{"physical_row",physicalRow},{"physical_rows",physicalRows},{"observed_row",null},
+    {"physical_move_attempts",0},{"click_attempts",0},{"send_input_calls",0},{"input_events_sent",0},{"context_restored",false},
+    {"stop",false},{"post_guard_error",null},{"automatic_retry",false},{"cursor_restore_attempts",0},
+    {"original_dpi_context",original.ToInt64()},{"target_dpi_context",targetContext.ToInt64()},
+    {"physical_select",true},{"caller_target_dpi_matched",true},{"input_event_flags",new int[]{2,4}},
+    {"selection_verified",false},{"selection_verification_scope","caller must read exact toolbox root/type and complete members"}};
+   bool changedContext=false;
+   try{
+    string[] observed,fresh;int[] geometry=PhysicalInitialCell(main,target,pid,project,program,physicalRows,physicalRow,instance,type,expected,out observed,expectedNames);report["observed_row"]=observed;report["geometry"]=geometry;
+    Point logical=new Point{X=geometry[0]+geometry[2]/2,Y=geometry[1]+geometry[3]/2};report["logical_point"]=new int[]{logical.X,logical.Y};
+    if(WindowFromPoint(logical)!=target)throw new Exception("Physical FBI logical point does not belong to exact grid");
+    Point physical=logical;
+    if(!LogicalToPhysicalPointForPerMonitorDPI(target,ref physical))throw new Exception("Physical FBI logical-to-physical conversion failed");
+    report["physical_point"]=new int[]{physical.X,physical.Y};
+    SamePhysicalGeometry(PhysicalInitialCell(main,target,pid,project,program,physicalRows,physicalRow,instance,type,expected,out fresh,expectedNames),geometry);
+    if(!AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),original) || !AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(target),targetContext))throw new Exception("Physical FBI DPI context changed before action");
+    if(SetThreadDpiAwarenessContext(new IntPtr(-4))==IntPtr.Zero)throw new Exception("Cannot enter PMv2; no physical action");changedContext=true;
+    if(!AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),new IntPtr(-4)) || WindowFromPoint(physical)!=target || GetForegroundWindow()!=main)
+     throw new Exception("Physical FBI PMv2 point owner/foreground differs");
+    SamePhysicalGeometry(PhysicalInitialCell(main,target,pid,project,program,physicalRows,physicalRow,instance,type,expected,out fresh,expectedNames),geometry);
+    if(!AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(target),targetContext))throw new Exception("Physical FBI target DPI context changed");
+    var moveKeys=new Dictionary<string,object>();report["button_modifier_states_before_move"]=moveKeys;
+    foreach(int key in new int[]{1,2,4,5,6,16,17,18,91,92}){
+     int state=GetAsyncKeyState(key);moveKeys[key.ToString()]=state;
+     if((state&0x8000)!=0)throw new Exception("Physical FBI mouse button or modifier is down before cursor movement; no move");
+    }
+    // One cursor movement is an explicit user-visible side effect. No restore,
+    // fallback coordinate, additional click or compensating release is sent.
+    report["physical_move_attempts"]=1;
+    if(!SetPhysicalCursorPos(physical.X,physical.Y))throw new Exception("Physical FBI cursor move failed; never repeat");
+    Point cursor;
+    if(!GetPhysicalCursorPos(out cursor) || cursor.X!=physical.X || cursor.Y!=physical.Y || WindowFromPoint(physical)!=target || GetForegroundWindow()!=main)
+     throw new Exception("Physical FBI real cursor/point owner/foreground changed after movement");
+    SamePhysicalGeometry(PhysicalInitialCell(main,target,pid,project,program,physicalRows,physicalRow,instance,type,expected,out fresh,expectedNames),geometry);
+    if(!AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(target),targetContext) || !AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),new IntPtr(-4)))
+     throw new Exception("Physical FBI target/caller DPI context changed before click");
+    var keys=new Dictionary<string,object>();report["button_modifier_states"]=keys;
+    foreach(int key in new int[]{1,2,4,5,6,16,17,18,91,92}){
+     int state=GetAsyncKeyState(key);keys[key.ToString()]=state;
+     if((state&0x8000)!=0)throw new Exception("Physical FBI mouse button or modifier is down; no click");
+    }
+    var inputs=new PhysicalInput[2];inputs[0].Payload.Mouse.Flags=2;inputs[1].Payload.Mouse.Flags=4;
+    // No slow MSAA read occurs between this final real-pointer proof and input.
+    if(!GetPhysicalCursorPos(out cursor) || cursor.X!=physical.X || cursor.Y!=physical.Y || WindowFromPoint(physical)!=target || GetForegroundWindow()!=main)
+     throw new Exception("Physical FBI real pointer/owner/foreground changed immediately before SendInput");
+    report["cursor_at_dispatch"]=new int[]{cursor.X,cursor.Y};report["send_input_calls"]=1;report["click_attempts"]=1;
+    int inputSize=Marshal.SizeOf(typeof(PhysicalInput));report["input_structure_bytes"]=inputSize;
+    uint sent=SendInput(2,inputs,inputSize);report["input_events_sent"]=(int)sent;
+    report["send_input_last_error"]=Marshal.GetLastWin32Error();report["partial_input_possible"]=sent!=2;report["left_button_may_remain_down"]=sent==1;
+    if(sent!=2)throw new Exception("Physical FBI SendInput partially/fully failed; inspect button state without repeating");
+    PhysicalInitialGuard(main,target,pid,project,program);
+   }catch(Exception error){report["stop"]=true;report["post_guard_error"]=error.Message;}
+   finally{
+    bool restored=!changedContext || SetThreadDpiAwarenessContext(original)!=IntPtr.Zero;
+    restored=restored && AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),original);
+    report["context_restored"]=restored;report["final_dpi_context"]=GetThreadDpiAwarenessContext().ToInt64();
+    if(!restored){report["stop"]=true;report["post_guard_error"]="Physical FBI caller DPI context restoration failed; inspect state";}
+   }
+   return report;
+  });
+ }
+ [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
+ static void ClickInitialPoint(IntPtr target,Node cell,Node root,int offset,bool glyph,ref bool dispatched){
+  int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+  if(!glyph)offset=w/2;
+  if(offset<1 || offset>=w-1 || h<=2 || (cell.State&0x18000)!=0)throw new Exception("Initial glyph/cell offset/visibility differs");
+  Point point=new Point{X=x+offset,Y=y+h/2};
+  if(point.X<gx || point.X>=gx+gw || point.Y<gy+20 || point.Y>=gy+gh || WindowFromPoint(point)!=target)throw new Exception("Initial glyph point is outside exact grid");
+  if(!ScreenToClient(target,ref point) || point.X<0 || point.Y<0 || point.X>32767 || point.Y>32767)throw new Exception("Initial glyph client coordinates differ");
+  IntPtr pos=new IntPtr(point.X|(point.Y<<16));
+  dispatched=true; // A failed post can be ambiguous. Return a receipt; never retry it.
+  if(!PostMessage(target,0x201,new UIntPtr(1),pos))throw new Exception("Initial glyph down post failed");
+  if(!PostMessage(target,0x202,UIntPtr.Zero,pos))throw new Exception("Initial glyph up post failed after down; inspect state without repeating");
+ }
+ static bool RevealInitialPoint(IntPtr target,Node cell,Node root,int glyphOffset,ref bool attempted){
+  int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+  string direction=BridgeInitialGridReader.RevealDirection(new int[]{x,y,w,h},cell.State,new int[]{gx,gy,gw,gh},glyphOffset);
+  if(direction=="visible")return true;
+  attempted=true; // SendMessageTimeout can fail after the control consumed it.
+  if(direction=="left" || direction=="right")Message(target,0x114,new UIntPtr(direction=="left"?0u:1u),IntPtr.Zero);
+  else{int packed=((gx+gw/2)&0xffff)|(((gy+gh/2)&0xffff)<<16);Message(target,0x20a,new UIntPtr(direction=="up"?0x00780000u:0xff880000u),new IntPtr(packed));}
+  return false;
+ }
+ public static object InitialStep(long mainValue,long targetValue,int pid,string project,string instance,int physicalRows,int physicalIndex,string[] expectedRoot,string[] expectedRow,string[] expectedBefore,string[] expectedAfter,string step,int glyphOffset,int targetColumn=1){
+  return InvokeOwned(delegate{
+   if(step!="observe" && step!="reveal_one" && step!="select_once" && step!="expand_once")throw new Exception("Unknown initial checkpoint step");
+   if(targetColumn<0 || targetColumn>1 || (step=="select_once" && targetColumn!=1))throw new Exception("Initial target column must be name or initializer; leaf selection uses initializer");
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);ValidateInitial(main,target,pid,project);
+   Node root=Root(target);InitialSource source=new InitialSource(root);
+   string[] observed=BridgeInitialGridReader.Checkpoint(source,instance,physicalRows,physicalIndex,expectedRoot,expectedRow,expectedBefore,expectedAfter);
+   if(observed[4]=="")throw new Exception("Cannot operate on a blank initial slot");
+   if(step=="select_once" || step=="expand_once"){
+    if(physicalIndex==0 || observed[4].IndexOfAny(new char[]{'[',']'})>=0)throw new Exception("Initial member action requires a non-array member path");
+    if(step=="select_once" && (observed[1]=="..." || !(observed[2]=="BOOL" || observed[2]=="INT" || observed[2]=="DINT" || observed[2]=="REAL" || observed[2]=="BYTE" || observed[2]=="IP" || observed[2]=="STRING" || System.Text.RegularExpressions.Regex.IsMatch(observed[2],@"\ASTRING<[1-9][0-9]*>\z"))))throw new Exception("Initial selection requires an observed scalar leaf");
+   }
+   int column=step=="expand_once"?0:targetColumn;Node cell=source.Cell(8+physicalIndex,column);
+   int rowHeight=source.RowHeight(8+physicalIndex),nameHeight=source.NameHeight(8+physicalIndex);
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   int state=cell.State,sx=x+w/2,sy=y+h/2;
+   if(column==0){if(glyphOffset<1 || glyphOffset>=w-1)throw new Exception("Initial glyph offset is outside fresh name cell");sx=x+glyphOffset;}
+   bool visible=(state&0x18000)==0 && w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh;
+   bool selected=VisibleSelection(state,x,y,w,h,gx,gy,gw,gh),scroll=false,scrollAttempted=false,click=false;string phase="observed",guardError=null;
+   try{
+    ValidateInitial(main,target,pid,project);
+    if(step=="reveal_one"){
+     phase="scroll_attempted";
+     bool revealed=RevealInitialPoint(target,cell,root,column==0?glyphOffset:-1,ref scrollAttempted);
+     if(revealed)phase="visible_observed";else{scroll=true;phase="scroll_dispatched";}
+    }else if(step=="select_once"){
+     if(!visible)throw new Exception("Initial leaf is not visible; reveal before selection");
+     if(selected)phase="already_selected_observed";
+     else{ValidateInitial(main,target,pid,project);phase="selection_dispatched";ClickInitialPoint(target,cell,root,0,false,ref click);
+      Stopwatch wait=Stopwatch.StartNew();do{
+       ValidateInitial(main,target,pid,project);Node freshRoot=Root(target);InitialSource fresh=new InitialSource(freshRoot);
+       BridgeInitialGridReader.Checkpoint(fresh,instance,physicalRows,physicalIndex,expectedRoot,expectedRow,expectedBefore,expectedAfter);
+       Node selectedCell=fresh.Cell(8+physicalIndex,1);int ax,ay,aw,ah;selectedCell.Object.accLocation(out ax,out ay,out aw,out ah,selectedCell.Id);
+       int fx,fy,fw,fh;freshRoot.Object.accLocation(out fx,out fy,out fw,out fh,0);
+       selected=VisibleSelection(selectedCell.State,ax,ay,aw,ah,fx,fy,fw,fh);if(selected){phase="selection_verified";break;}
+       System.Threading.Thread.Sleep(20);
+      }while(wait.ElapsedMilliseconds<250);
+     }
+    }else if(step=="expand_once"){
+     if(!visible)throw new Exception("Initial ancestor is not visible; reveal before expansion");
+     ValidateInitial(main,target,pid,project);
+     source=new InitialSource(Root(target));BridgeInitialGridReader.Checkpoint(source,instance,physicalRows,physicalIndex,expectedRoot,expectedRow,expectedBefore,expectedAfter);
+     phase="expansion_dispatched";ClickInitialPoint(target,source.Cell(8+physicalIndex,0),Root(target),glyphOffset,true,ref click);selected=false;
+    }
+    ValidateInitial(main,target,pid,project);
+    if(!click && !scroll)BridgeInitialGridReader.Checkpoint(new InitialSource(Root(target)),instance,physicalRows,physicalIndex,expectedRoot,expectedRow,expectedBefore,expectedAfter);
+    ValidateInitial(main,target,pid,project);
+   }catch(Exception error){if(!click && !scrollAttempted)throw;guardError=error.Message;}
+   return new Dictionary<string,object>{{"schema",1},{"status","fbi_initial_step"},{"instance",instance},{"step",step},{"phase",phase},
+    {"physical_data_rows",physicalRows},{"physical_index",physicalIndex},{"root_row",expectedRoot},{"observed_row",observed},
+    {"row_height",rowHeight},{"name_height",nameHeight},
+    {"visible_observed",visible},{"selection_verified",selected && !scroll && step!="expand_once" && guardError==null},
+    {"scroll_dispatched_once",scroll},{"scroll_attempted_once",scrollAttempted},{"click_dispatched_once",click},{"needs_observe",scrollAttempted || (click && !selected) || step=="expand_once"},
+    {"stop",guardError!=null},{"post_guard_error",guardError},{"cell_rect",new int[]{x,y,w,h}},{"grid_rect",new int[]{gx,gy,gw,gh}},
+    {"cell_state",state},{"native_values_used",false}};
+  });
+ }
  static List<Dictionary<string,string>> InitialRows(IntPtr main,IntPtr target,int pid,string project,string instance){
   uint actual;GetWindowThreadProcessId(main,out actual);if(actual!=pid)throw new Exception("Initial-value main process changed");
   GetWindowThreadProcessId(target,out actual);
@@ -346,6 +665,90 @@ public static class BridgeAccessibility {
   object result=BridgeGridReader.ReadInstancePage(new GridSource(Root(target)),offset,limit);
   Validate(main,target,pid,project,program,false);return result;
  }
+ public static object ReadGridDiagnosticPage(long mainValue,long targetValue,int pid,string project,string program,int offset,int limit){
+  return InvokeOwned(delegate{
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);
+   Validate(main,target,pid,project,program,false);
+   object result=BridgeGridReader.ReadDiagnosticPage(new GridSource(Root(target)),offset,limit);
+   Validate(main,target,pid,project,program,false);return result;
+  });
+ }
+ static void CleanRootPreparation(IntPtr main,IntPtr target,int pid,string project,string program){
+  Validate(main,target,pid,project,program,false);
+  for(IntPtr h=GetParent(target);h!=IntPtr.Zero && h!=main;h=GetParent(h))
+   if(Class(GetParent(h))=="MDIClient" && Text(h)!=program)throw new Exception("Root field preparation requires a clean target document");
+ }
+ public static object PrepareGridRootStep(long mainValue,long targetValue,int pid,string project,string program,int physicalRows,int physicalRow,string[] expectedRow,string beforeFull,string afterFull,string step,int[] knownOtherIds){
+  return InvokeOwned(delegate{
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);
+   CleanRootPreparation(main,target,pid,project,program);
+   if(expectedRow==null || expectedRow.Length!=18 || knownOtherIds==null || (step!="observe" && step!="reveal_one" && step!="select_once"))
+    throw new Exception("Root step requires complete actual checkpoint, known other IDs and explicit observe/reveal_one/select_once");
+   var ids=new HashSet<int>();foreach(int id in knownOtherIds)if(id<=0 || !ids.Add(id))throw new Exception("Known other root IDs are invalid or duplicated");
+   string[] observed;Node root=Root(target);GridSource source=new GridSource(root);
+   BridgeGridReader.CellAddress address=BridgeGridReader.PhysicalRoot(source,physicalRows,physicalRow,expectedRow,beforeFull,afterFull,false,out observed);
+   int actualId;if(observed[11]!="" && Int32.TryParse(observed[11],out actualId) && ids.Contains(actualId))throw new Exception("Actual target root ID conflicts with a frozen nonempty other-root ID");
+   Node cell=source.Cell(address.DisplayChild,address.Column);
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   int state=cell.State,sx=x+w/2,sy=y+h/2;
+   bool visible=(state&0x18000)==0 && w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh;
+   bool selected=VisibleSelection(state,x,y,w,h,gx,gy,gw,gh),scroll=false,click=false;
+   string phase="observed";
+   if(step=="reveal_one"){
+    if(RevealStep(target,cell,root))phase="visible_observed";
+    else{scroll=true;phase="scroll_dispatched";}
+   }else if(step=="select_once"){
+    if(!visible)throw new Exception("Physical root name cell is not visible; observe/reveal before selecting");
+    if(selected)phase="already_selected_observed";
+    else{CleanRootPreparation(main,target,pid,project,program);Click(target,cell,false);click=true;phase="selection_dispatched";}
+   }
+   string guardError=null;try{CleanRootPreparation(main,target,pid,project,program);}catch(Exception error){guardError=error.Message;}
+   var materialized=new List<object>();for(int c=0;c<observed.Length;c++)if(String.IsNullOrEmpty(expectedRow[c]) && observed[c]!="")
+    materialized.Add(new Dictionary<string,object>{{"column",c},{"before",expectedRow[c]??""},{"after",observed[c]}});
+   bool complete=observed[0]!="" && observed[1]==observed[17] && observed[2]!="" && observed[5]!="" && observed[6]!="" && observed[10]!="" && observed[11]!="";
+   return new Dictionary<string,object>{{"status","physical_root_preparation_step"},{"phase",phase},{"step",step},
+    {"physical_row",physicalRow},{"physical_rows",physicalRows},{"full_name",observed[17]},
+    {"observed_row",observed},{"materialized_fields",materialized},{"complete_root_fields",complete},
+    {"visible_observed",visible},{"selection_verified",selected && !click && !scroll},
+    {"scroll_dispatched_once",scroll},{"selection_dispatched_once",click},{"needs_observe",scroll || click},
+    {"global_preorder_verified",false},{"preorder_scope","caller complete stable physical matrix checkpoint; final full reader must verify all roots"},
+    {"known_id_conflicts_checked",true},{"nonempty_fields_preserved",true},{"native_values_used",false},
+    {"cell_rect",new int[]{x,y,w,h}},{"grid_rect",new int[]{gx,gy,gw,gh}},{"cell_state",state},
+    {"stop",guardError!=null},{"post_guard_error",guardError},
+    {"scope","one bounded observe, scroll or name selection; no F2, value write, save or implicit repeat"}};
+  });
+ }
+ public static object PrepareGridCellStep(long mainValue,long targetValue,int pid,string project,string program,int physicalRows,int sourceRow,int displayRow,int column,string[] sourceExpected,string[] displayExpected,string beforeFull,string afterFull,string variable,string expected,bool spare,string step){
+  return InvokeOwned(delegate{
+   IntPtr main=new IntPtr(mainValue),target=new IntPtr(targetValue);
+   Validate(main,target,pid,project,program,false);
+   if(step!="observe" && step!="reveal_one" && step!="select_once")throw new Exception("Expected one explicit cell checkpoint step");
+   Node root=Root(target);GridSource source=new GridSource(root);string[] sourceObserved,displayObserved;
+   BridgeGridReader.CellAddress address=BridgeGridReader.CellCheckpoint(source,physicalRows,sourceRow,displayRow,column,sourceExpected,displayExpected,beforeFull,afterFull,variable,expected,spare,out sourceObserved,out displayObserved);
+   Node cell=source.Cell(address.DisplayChild,address.Column);
+   int x,y,w,h,gx,gy,gw,gh;cell.Object.accLocation(out x,out y,out w,out h,cell.Id);root.Object.accLocation(out gx,out gy,out gw,out gh,0);
+   int state=cell.State,sx=x+w/2,sy=y+h/2;
+   bool visible=(state&0x18000)==0 && w>2 && h>2 && sx>=gx && sx<gx+gw && sy>=gy+20 && sy<gy+gh;
+   bool selected=VisibleSelection(state,x,y,w,h,gx,gy,gw,gh),scroll=false,click=false;string phase="observed";
+   if(step=="reveal_one"){
+    if(RevealStep(target,cell,root))phase="visible_observed";
+    else{scroll=true;phase="scroll_dispatched";}
+   }else if(step=="select_once"){
+    if(!visible)throw new Exception("Checkpoint cell is not visible; reveal before selecting");
+    if(selected)phase="already_selected_observed";
+    else{Validate(main,target,pid,project,program,false);Click(target,cell,false);click=true;phase="selection_dispatched";}
+   }
+   string guardError=null;try{Validate(main,target,pid,project,program,false);}catch(Exception error){guardError=error.Message;}
+   return new Dictionary<string,object>{{"status","grid_cell_checkpoint_step"},{"phase",phase},{"step",step},
+    {"physical_rows",physicalRows},{"source_row",sourceRow},{"display_row",displayRow},{"column_index",column},
+    {"source_values",sourceObserved},{"display_values",displayObserved},{"variable",variable},{"expected",expected},{"spare",spare},
+    {"visible_observed",visible},{"selection_verified",selected && !click && !scroll},
+    {"scroll_dispatched_once",scroll},{"selection_dispatched_once",click},{"needs_observe",scroll || click},
+    {"cell_rect",new int[]{x,y,w,h}},{"grid_rect",new int[]{gx,gy,gw,gh}},{"cell_state",state},
+    {"global_preorder_verified",false},{"native_values_used",false},{"stop",guardError!=null},{"post_guard_error",guardError},
+    {"scope","bounded cell from caller verified complete frame; exact source/display fields; no F2, value write, save or implicit retry"}};
+  });
+ }
  public static object Run(string action,long mainValue,long targetValue,int pid,string project,string program,string variable,string column,string expected){
   return InvokeOwned(delegate{return RunCore(action,mainValue,targetValue,pid,project,program,variable,column,expected);});
  }
@@ -363,8 +766,10 @@ public static class BridgeAccessibility {
    Validate(main,target,pid,project,program,false);
    return new Dictionary<string,object>{{"columns",columns},{"accessible_children",root.ChildCount}};
   }
-  if(action=="grid" || action=="grid_display"){
-   object result=action=="grid"?BridgeGridReader.Read(new GridSource(root)):BridgeGridReader.ReadDisplayed(new GridSource(root));
+  if(action=="grid" || action=="grid_display" || action=="grid_root_inventory" || action=="grid_hybrid_frame"){
+   object result=action=="grid"?BridgeGridReader.ReadInteractive(new GridSource(root)):
+    action=="grid_hybrid_frame"?BridgeGridReader.ReadHybridFrame(new GridSource(root)):
+    action=="grid_root_inventory"?BridgeGridReader.ReadRootInventory(new GridSource(root)):BridgeGridReader.ReadDisplayed(new GridSource(root));
    Validate(main,target,pid,project,program,false);return result;
   }
   if(action=="tree_nodes"){

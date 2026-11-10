@@ -1,5 +1,185 @@
 # 关闭工程后的离线编辑
 
+## 关闭工程新建 LiteST FB
+
+保存并关闭整个工程。`offline-fb-plan` 从直接 HCP 和 `folder.txt` 识别已观察的平面 FB 根目录，核对重名和现有文件，生成绑定全工程文件哈希的计划。`offline-fb-create` 使用该计划与实际摘要创建空白 FB。可在规划时加 `--comment '一行注释'`，工具会生成 `(* 一行注释 *)`。
+
+```powershell
+$plan = python -B $bridge offline-fb-plan --project $project --name FB_PressCycle --output "$artifacts/fb-plan.json" | ConvertFrom-Json
+python -B $bridge offline-fb-create --plan-file $plan.plan_file --expect-plan-sha256 $plan.plan_sha256 --backup-root "$artifacts/fb-backups" --experimental
+```
+
+`offline_fb_created` 且 `pair_verified=true` 表示原生 FB、`folder.txt` 和直接 HCP 已完整回读。计划和备份放在工程外。应用时先备份两个登记文件，再写入 FB、树目录和 HCP。写入期间持有独占句柄，HCP 最后写。`partial` 时检查 `landed`、备份和 `receipt`。若登记失败，工具尝试通过仍独占的句柄恢复原登记，保留已创建的 FB 供核对。强制中断时以写前 `intent.json` 和实际文件为准。
+
+资格限于 AutoShop V4.11.0.5 已观察的 UTF-16LE HCP、连续文件登记号、平面 FB 根目录及 LiteST 记录。未知目录布局、重名、被占用工程和并发修改会停止。创建后重新执行 `offline-export`，即可通过现有流程追加声明和写正文。空白 FB 的首次文件正文写入支持一行，生成正常首行保存所观察到的一条零元数据记录。
+
+## 含数组成员的结构变量
+
+通过下方 `offline-export`、`offline-check`、`offline-build`、`offline-apply` 向已登记 GVT 增加普通结构根。使用准确登记的结构名和 `initial_value:null`。本例的三个数组成员由结构定义自身提供，原生 GVT 新记录只引用 `HMC_PtpIn`，默认初值为空，地址由 AutoShop 处理。
+
+```json
+{"schema":1,"targets":[{"file":"变量表.gvt","variable_operations":[{"op":"add","name":"gAxisIn_Z","data_type":"HMC_PtpIn","comment":"","initial_value":null}]}]}
+```
+
+## FC已有类别与数值类型
+
+FC现有数值声明的两入口支持明确 `set category`／`set data_type`。目标须在输入中已存在，原类型 CString 为空，类型为 BOOL／INT／DINT／REAL、类别已识别；新类别限定 VAR／IN／OUT／INOUT，新类型限定上述四种。逐操作核对 `expected`，只改相应 DWORD，保留另外两尾未知值、名称、注释、其他记录及完整正文／行表／外壳。正常界面独立样本为 VAR→OUT 和 INT→REAL，其他组合仅有合成检查；正式验证及交付状态见[本批报告](validation.md)。
+
+BYTE／IP／STRING、ARRAY、结构、FB实例换型、非空类型 CString 及未知代码不属于本次 set；既有新增能力保持。不能 set 本批才 add 的行，不能附加初值或保持字段。正文和调用实参不自动同步，语义交 AutoShop 编译；文件方式关开工程后加载，编辑器保存后重新捕获登记凭据。名称、返回类型／FCI及新建FC仍待。
+
+```json
+{"schema":1,"targets":[{"file":"CalcDemo.FC","variable_operations":[
+  {"op":"set","name":"enabled","field":"category","expected":"VAR","value":"OUT"},
+  {"op":"set","name":"counter","field":"data_type","expected":"INT","value":"REAL"}
+]}]}
+```
+
+沿 `offline-export` → `offline-check` → `offline-build` → 显式摘要 `offline-apply`，不修改只读快照。示例名称须来自准确登记对象；set不附 `initial_value`，新增 add 仍要求 `initial_value:null`。
+
+## s31限定原生范围与门禁证据
+
+FC普通已登记命名结构声明（code64），以及FB一／二维结构ARRAY中更深code64成员默认、含ARRAY成员子结构的默认表示。FC沿独立三尾记录，所有新增明确null，无FB式初值／保持字段；FB结构ARRAY沿独立value／comment模板，code64继续处理准确已识别子定义，code128成员省略并保留原位置分隔符，不生成其内部元素默认值。普通结构的根注释模板仍独立，GVT／STRU普通根不是这种默认生成。
+
+准确非空定义、真实选择器、全部可读定义哈希、未保存内容、唯一备份、CAS及旧记录／正文／不透明字节和完整回读保护保持。FC／GVT／STRU普通根只核准确身份，不递归证明成员业务合法性；FB只遍历实际code64默认依赖，省略的ARRAY不追业务元素图。FB递归格式以工作栈、活动类型路径及共享UTF-8预算实现；循环、错名／缺失／空定义、未知标量或注释语法拒绝。嵌套空注释关闭后不加07，标量空注释仍保留07；预算沿现有65533字节CString／容器边界，不是PLC容量规则。helper缺省及既有非递归模式、sharedflat和结构改名不扩。三维、IEC上下界、FB元素ARRAY、任意显式复杂初值、ARRAY成员内部元素默认构造、未知宿主记录、FC返回类型／FCI／FC中FB实例／通用新建FC仍另待。
+
+本轮限定原生验收、两模式持久回读、组合与恢复0错误编译、关闭观察及最终67／59／192精确恢复完成；最终完整软件与本地包交付以包外实际回执为准。
+
+本段记录2026-11-01.s31／CLI1.03原生门禁完成的构建前时点；完整软件、资源数量、manifest与ZIP结果由随后包外实际回执提供。最终软件数字／ZIP结果由包外回执补充；不安装、创建Git提交／标签或远端发布，安装／公开仍s24。35公共签名保持，合成契约案例不替代原生验收。[本轮证据](validation.md)。
+
+## s29历史本地候选：FB嵌套结构及含ARRAY成员结构默认
+
+本批拟交付`2026-11-01.s29 / CLI1.03 / 91文件`，实际构建、原生验收、软件回归及ZIP状态以包外本批最终回执为准。仅本地，不安装或远端发布；安装/公开此前记录仍s24，s28及更早交付、失败和恢复证据保持各自原范围。
+
+限定LiteST FB VAR/IN/OUT/INOUT，两模式空/非空新增沿既有入口，均显式`initial_value:null`。普通结构新增使用根成员comment模板：准确识别的nested结构成员(code64)及ARRAY成员(code128)有非空原生注释时保留`成员:=`、原生07分隔及原comment；不生成其值、不递归业务依赖。成员按根定义原序，分隔符保持已观察的原位置规则，全部注释为空则默认空串。
+
+嵌套结构的一/二维ARRAY采用独立value/comment模板，仅展开一层nested成员，其child必须为准确已登记且已冻结的已验flat scalar定义。child逐成员输出已知默认值、原生07及原comment，再接根成员07及原comment；不是普通结构的comment-only模板。更深nested、ARRAY child、未知描述及默认、显式复杂初值、三维/IEC上下界、FB元素ARRAY仍需独立实现和证据，不凭本批扩大。
+
+组装nested默认串时按UTF-8字节使用既有writer的65533字节CString上限与原生容器上限的较小值，预留维度包装并在根/child追加前检查预算；越界早拒，不先构造超大中间串。这是既有文件格式及内存边界，不增加PLC容量、成员数或业务规模限制。
+
+这两种默认profile只由FB新增路径显式启用。GVT普通结构新增、STRU普通命名成员新增和结构改名等既有strict资格保持；不把FB默认语法套到其他宿主。准确原生code/text、定义和身份冻结、未保存内容、并发、唯一备份、旧记录/正文/不透明字节及完整原生/实际UI回读继续保护；语义由AutoShop编译检查，不修改网络配置或推算地址。
+
+普通结构UI隐藏初值可能大写、排序，与native全文分开记录；本批nested ARRAY的hidden等于native仅为所观察profile，不推广到所有复杂类型。源码契约、合成案例及实际指纹在包外维护，公共签名35个保持；合成测试、正常保存oracle、两模式持久回读、组合/恢复编译及关闭观察分别计证。以下s28及更早章节仅保留历史范围，旧限制只由本节明确新增部分细化。
+
+## s28历史本地候选：FB结构ARRAY默认与特殊成员注释
+
+s28历史本地候选为`2026-10-31.s28 / CLI1.03`，本批范围为含BYTE/IP标量成员的已登记扁平结构在FB一/二维ARRAY中的默认构造，以及已观察结构成员特殊注释在普通/ARRAY初始化模板中的保留。两模式沿现有入口覆盖VAR/IN/OUT/INOUT，新增统一传`initial_value:null`；默认由限定原生profile生成，不由调用者拼接复杂初值。具体原生、软件验证和编译结果以包外本批最终回执为准；不安装、不远端发布，实际安装/公开仍s24。本地s27/s26/s25及原失败证据保持原范围。
+
+定义内BYTE/IP直接成员继续没有category或initial_value字段。要求准确登记、根定义哈希冻结及各成员布局完整识别；身份、未保存内容、并发、唯一备份、旧记录/正文/不透明字节、完整原生及实际UI回读保护保持。普通结构的UI隐藏初值与原生全文可能不同，ARRAY在本批profile中另行核对，不能把隐藏栏或`...`预览当作原生串。
+
+未知嵌套默认、三维、显式上下界、FB元素、任意显式复杂初值、未知控制字符及其他宿主新默认语法不扩张。EtherNet/IP导出等工程语义交AutoShop编译检查，不自动修改网络配置或推算地址。源码契约1.2.0/r39及合成示例在包外维护；实际案例数和代码指纹以源码契约JSON为准，35个公共签名保持，合成验证不等于原生验收。
+
+以下s27及更早章节是历史范围；旧限制仅由本节明确新增范围细化，旧成功不改标签为s28。
+
+### 默认、特殊注释与请求表达
+
+FB引用准确登记的`ByteIpData[2]`或`ByteIpData[2,3]`时，四类别均明确`initial_value:null`。结构ARRAY中BYTE成员的已观察默认为`0`，IP为`192.168.1.0`；这些值由受保护的默认构造生成，不填成顶层字符串。普通结构沿独立成员注释模板，不套用ARRAY的值/注释模板。
+
+结构定义中正常IDE保存的成员注释可包含已观察括号、逗号和冒号；原生编码后的comment用于相应普通/ARRAY模板并保留原字节，不解码后再写回。原生03/04/05属于本批新增已观察成员注释profile，06沿既有profile；这与FB ARRAY变量自身注释的01/02/05显示映射不同。FB新增仅提交`initial_value:null`，自动读取已冻结定义的raw注释并沿已验模板生成，不手拼复杂初始化串。既有STRU注释编辑仍沿导出raw的`expected`/`value`契约；适配器负责可见转换及保存后raw核验，调用者不自行归一化导出值。未知literal profile继续拒绝。含实际字面分隔符的未识别原生comment、未知控制字符、TAB或未配对CR/LF仍拒绝；不提供通用注释编码器，不推定FC/GVT或其他未知布局。
+
+普通结构隐藏初值可能规范成员大小写并省略部分原生内容；原生全文、隐藏值和预览分别记录，仅在完整限定profile下核对，不清洗raw快照来制造相等。
+
+```json
+{"schema":1,"operations":[
+  {"op":"add","name":"localData","data_type":"ByteIpData[2]","category":"VAR","initial_value":null,"comment":""},
+  {"op":"add","name":"inputGrid","data_type":"ByteIpData[2,3]","category":"IN","initial_value":null,"comment":""},
+  {"op":"add","name":"outputData","data_type":"ByteIpData[2]","category":"OUT","initial_value":null,"comment":""},
+  {"op":"add","name":"inoutGrid","data_type":"ByteIpData[2,3]","category":"INOUT","initial_value":null,"comment":""}
+]}
+```
+
+示例名称是合成占位，须替换为准确登记的真实定义。方法二使用operations清单；文件模式将同样操作放入schema1/targets对应FB的variable_operations，再执行offline-export/check/build/apply。不修改只读导出表，不混合删除与新增事务。
+
+本批范围及分阶段证据见[结构ARRAY默认与特殊注释报告](validation.md)。
+
+## s27历史：BYTE/IP数组与普通扁平结构引用
+
+s27历史本地候选为2026-10-31.s27／CLI1.03，扩展`BYTE[2]`、`BYTE[2,3]`、`IP[2]`、`IP[2,3]`所代表的一／二维ARRAY，沿FB四类别、FC四类别、结构直接成员及GVT既有两模式入口；另补含BYTE/IP成员的普通扁平结构引用。正常保存／整文件对照、正式两模式适当空／非空保存及跨会话完整回读已完成；共同正文18:02:05编译0错误（9612行），原代码18:23:14恢复编译0错误（9588行），相应严格回读、FBI71及关闭观察分别留证。最终67原件／59源码原哈希、192集合已核，5项生成差量单列；原失败与补充资格不追改成功。最终软件和完整包结果以包外本批回执为准，本轮仅本地，不安装或远端发布，实际安装／公开仍s24。证据见[本轮报告](validation.md)。
+
+FB、FC、GVT数组新增均传`initial_value:null`，结构成员不带该字段；不填BYTE或IP直接标量的默认值。FB/FC/结构成员保存code128及完整类型文本；GVT数组使用独立元素码、总元素数和维度尾字段，初值为空、地址未分配交IDE处理，不能把类型文本或显示位长当原生布局。方法二走真实ARRAY对话框，并核完整表及实际默认字段。
+
+已有扁平结构可含BYTE/IP成员，普通FB VAR/IN/OUT/INOUT及GVT引用仍传null并冻结准确根定义。FB沿实测成员注释模板，GVT普通结构原生初值为空；这些默认格式不扩张到含新成员结构的ARRAY、嵌套结构或显式复杂初值。三维、显式上下界、FB元素及未知布局仍另待。
+
+FB code128 ARRAY注释的实际显示与新增保存核验支持已观察的方括号、逗号原生转义；原生`comment`仍保留raw，旧记录仍逐字节保护。此显示映射不推定FC／STRU／GVT或未知控制字符，也不是通用comment-set编码器。EtherNet/IP导出等工程语义限制仍由AutoShop编译检查，工具不修改网络配置或猜测分配地址。
+
+```json
+{"schema":1,"targets":[
+  {"file":"Logic.FB","variable_operations":[
+    {"op":"add","name":"byteSamples","data_type":"BYTE[2]","category":"VAR","initial_value":null,"comment":"Byte array"},
+    {"op":"add","name":"ipGrid","data_type":"IP[2,3]","category":"OUT","initial_value":null,"comment":"IP array"},
+    {"op":"add","name":"packetInput","data_type":"FlatPacket","category":"IN","initial_value":null,"comment":"Existing flat definition"}
+  ]},
+  {"file":"Globals.gvt","variable_operations":[
+    {"op":"add","name":"globalByteGrid","data_type":"BYTE[2,3]","initial_value":null,"comment":"Global array"},
+    {"op":"add","name":"globalPacket","data_type":"FlatPacket","initial_value":null,"comment":"Existing flat definition"}
+  ]}
+]}
+```
+
+示例`FlatPacket`须为当前工程已有的准确扁平结构定义，不由示例自动创建。其定义先保存并重新冻结，再创建引用；原记录／正文／不透明字节、唯一备份、全部哈希、完整回读和未保存内容保护保持。
+
+## BYTE/IP直接声明
+
+此前已完成的本地s26 / CLI1.03范围如下。FB四类别、FC、STRU直接成员及GVT的BYTE/IP两模式新增已完成限定原生验收：正常保存整文件对照、适当空/非空正式保存、跨会话完整回读、组合及恢复编译0错误、关闭观察和精确事件审计分别留证。编译器观察到的地址/FCI差量与工具写入分开记录，67原件及59源码已恢复，192集合保持，生成差量单列。该批最终软件与包结果由其包外回执记录，已完成s25归档保持，实际安装/公开仍s24。阶段及证据见[s26报告](validation.md)。
+
+原生类型码为BYTE 8192、IP 4096；IDE默认分别为`0`与`192.168.1.0`，GVT显示位长分别为8/32。FB VAR/IN/OUT及GVT提供明确字符串初值，保留原文交AutoShop编译；FB INOUT及全部FC提供JSON null，STRU成员没有独立初值字段。IP编辑器使用已观察的ATL文本控件，完整字符串回读，不把IP初值转换为推算地址。s26仅含直接声明／成员；本轮ARRAY与普通扁平引用范围见页首，含新成员结构ARRAY默认及未知复杂布局仍另待。
+
+方法一沿原offline流程使用以下targets；方法二FB沿editor-variables使用对应`schema:1,operations`，STRU/GVT沿table-editor使用对应changes.json。文件名替换为已准确登记对象，不因示例创建容器：
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"localByte","data_type":"BYTE","category":"VAR","initial_value":"165","comment":"Byte value"},
+    {"op":"add","name":"peerIp","data_type":"IP","category":"INOUT","initial_value":null,"comment":"IP reference"}
+  ]},
+  {"file":"CalcDemo.FC","variable_operations":[
+    {"op":"add","name":"inputIp","data_type":"IP","category":"IN","initial_value":null,"comment":"IP input"}
+  ]},
+  {"file":"Data.stru","variable_operations":[
+    {"op":"add","name":"statusByte","data_type":"BYTE","comment":"Direct member"}
+  ]},
+  {"file":"Globals.gvt","variable_operations":[
+    {"op":"add","name":"globalIp","data_type":"IP","initial_value":"10.23.4.5","comment":"Explicit IP"}
+  ]}
+]}
+```
+
+原记录、正文、不透明字节、基线/并发哈希、唯一备份及完整回读保护保持；不因新类型码已识别就放宽未知宿主布局，也不重放已消费的验证步骤。
+
+s25历史阶段说明：其限定原生验收已完成，当时本地候选修订为2026-10-31.s25；最终软件校验结果以包外交付回执为准；当前实际安装/公开仍为s24，不安装、不云端发布，不能因同为CLI1.03而向旧安装提交ARRAY请求。下方s24及更早已交付功能保持。
+
+## ARRAY新增（s25本地交付准备）
+
+沿原offline-export/check/build/apply流程及`schema:1`的targets/variable_operations新增，不修改只读variables.json。四宿主数值builtin、STRING默认128/20及已登记结构元素一/二维已有16组正常保存配对、42条新增记录的整文件exact对照。两模式空/非空正式保存、完整持久回读、候选编译与最终恢复已有证据；本轮另完成候选后台关闭及同条件真实F7/鼠标关闭对照，最终恢复编译0错误、67原件/59源码exact、192集合保持，仅Temp/EIPIns.foid生成差。GVT原9项公共批超时和限定续作分开记录，不把后续成功追认为原批成功。受测环境禁用Computer Use插件、主Windows后端缺席而Swift仍在，历史vsflex/MFC错误保留，根因未定，不宣称所有客户端或环境均已修复。当前本地候选为2026-10-31.s25/CLI1.03，完整性以91文件清单及check_bundle为准，最终软件校验结果由包外回执记录；未安装或公开发布。
+
+以下是开发请求格式，文件名须替换为当前准确登记对象，FlatData须为已有准确登记/定义哈希的结构；不因示例创建新对象，不在同批改正在引用的结构根后仍按旧定义生成数组，不把FB数组默认模板套为GVT默认串：
+
+```json
+{"schema":1,"targets":[
+  {"file":"Controller.FB","variable_operations":[
+    {"op":"add","name":"samples","category":"VAR","data_type":"INT[3]","initial_value":null,"comment":"Numeric array"},
+    {"op":"add","name":"labels","category":"VAR","data_type":"STRING<20>[2,3]","initial_value":null,"comment":"FB text array"},
+    {"op":"add","name":"states","category":"VAR","data_type":"FlatData[2]","initial_value":null,"comment":"Registered structure array"}
+  ]},
+  {"file":"CalcDemo.FC","variable_operations":[
+    {"op":"add","name":"requests","category":"IN","data_type":"BOOL[2]","initial_value":null,"comment":"FC numeric array"},
+    {"op":"add","name":"inputStates","category":"IN","data_type":"FlatData[2,3]","initial_value":null,"comment":"Registered structure array"}
+  ]},
+  {"file":"Data.stru","variable_operations":[
+    {"op":"add","name":"matrix","data_type":"INT[3,2]","comment":"Array member"},
+    {"op":"add","name":"states","data_type":"FlatData[2]","comment":"Registered structure array member"}
+  ]},
+  {"file":"Globals.gvt","variable_operations":[
+    {"op":"add","name":"globalMatrix","data_type":"INT[3,2]","initial_value":null,"comment":"Global array"}
+  ]}
+]}
+```
+
+新复杂默认`initial_value:null`，不写`"0"`或`"..."`；STRU成员没有category/initial_value。ARRAY一维为`Element[n]`、二维为`Element[n,m]`，不写`Element[n][m]`或自行换算未观察的显式上下界。STRING默认128保留原生`STRING<128>[2]`，UI可显示`STRING[2]`；明确20二维为`STRING<20>[2,3]`，原生容量及UI别名分别核对。结构元素用已验根定义生成宿主默认值，FB数组的值/注释模板不同于普通结构变量；不手拼初始化串、不递归证明业务引用。未知组合具体报告未实现，不因旧白名单永久禁止，也不借已有读取能力放行未知新目标。
+
+正文、引用和多文件修改由调用AI用原source_file机制显式组织，不自动同步或证明业务语义。旧记录/不透明字节/正文、全部基线哈希、唯一备份、候选重建、写后完整回读及非目标保护保持；无关旧未知数组不递归阻断已支持目标。编辑器可选array_type_verification的partial/未解释字段只是精确诊断，不代表所有原生字段已核，新目标未知仍停止。方法二沿原editor-variables/table-editor-edit，字段与JSON见本页开发示例及Skill的references/data-editing.md ARRAY小节。
+
+## 已交付范围与离线保护
+
 s24本批补齐含REAL与规范STRING容量描述的扁平结构变量及FB VAR/IN/OUT/INOUT接口，复用既有offline系列，不新增同步业务引用的接口。正常IDE12条新记录跨3份完整保存文件与候选逐字节一致；非空正式文件和编辑器路径完整回读，显式正文修正后22:45:50组合编译0错误。两模式空表FB/GVT各两项均已正式保存、重新打开及完整回读；空表中间态保留旧引用而未编译。最终恢复和交付见[本批结构profile报告](validation.md)，各阶段不由s23历史结果替代。
 
 s23两模式REAL/STRING直接声明的限定原生验收及恢复、完整回归、包校验、安装及发布均已完成；该版为2026-10-30.s23/CLI1.03/89文件，指定安装及GitHub953c137全文件核验一致，证据见[s23报告](validation.md)。新增JSON见下文，旧安装不能仅凭CLI1.03取得后续修订能力。
@@ -13,8 +193,8 @@ s17补齐已登记LiteST FB内部VAR的项目FB实例新增，含空表首项和
 s16新增严格空GVT首项/第二项：标量和已支持扁平结构复用本页variable_operations/add格式及全量保护，不新增profile开关。正常IDE保存与候选整文件匹配，实际重开回读通过，原12项加本轮5项编译0错误；见[专项报告](validation.md)。未知空布局另待；未知HCPP的默认strict不变，s22可显式使用独立项目登记基线，不靠镜像放权。
 
 整理方式：AI 根据实现与独立副本验证整理  
-当前状态：s23直接REAL/STRING新增已交付；s24扁平结构profile、正常样本及正式非空路径已实现并分阶段验收  
-最后更新：2026-10-30
+历史阶段状态：s24已交付；s25本地候选的限定原生验收完成，最终软件校验以包外回执为准，安装/公开仍s24  
+最后更新：2026-10-31
 
 offline系列处理已创建并登记的ST、LiteST FB、ST型FC、结构、全局变量表和FBI实例表，不新建对象、不改HCP。保存所需修改并关闭整个目标工程，关闭FB标签不足以重载；无需退出AutoShop。输出和备份必须在工程及Skill安装目录外。当前为同步CLI和内部Python工作流，不属于service.__all__的稳定接口。
 
@@ -290,3 +470,24 @@ registration错误码：registration_needs_refresh、registration_stale、regist
 offline错误码：offline_conflict、offline_project_unavailable、offline_invalid_request。操作系统文件错误统一为offline_project_unavailable，只有真实Win32共享32/33另带requires_close_entire_project；未知权限问题不猜原因。没有进度回调、取消或自动编译，超时后先检查状态。完整备份含非目标配置，文件多时有额外耗时。
 
 实现：workflows/offline.py和formats/offline_source.py、offline_variables.py、offline_globals.py；Windows句柄守卫projects/offline_guard.py。[实际验证及限制](validation.md)。
+
+## s30历史：普通结构成员与GVT结构根（已完成本地交付）
+
+s30限定原生验收、最终恢复、完整软件回归和本地包交付均已完成；当前s31新增范围与门禁证据见本页顶部。
+
+
+s30历史范围：源码已实现STRU新增准确登记的普通结构成员，以及GVT普通code64引用含ARRAY成员或nested成员的结构根。s30该批STRU正式范围仅为两模式的非空表追加；IDE禁止删除最后成员，不能宣称空STRU首项已验。GVT沿独立根记录profile，目标结构必须准确登记、定义可读且非空；不递归证明成员业务依赖，不推算子布局或地址，不把FB默认模板套给GVT。共享flat默认helper、结构改名及其他宿主边界保持。
+
+STRU add只有`op/name/data_type/comment`，没有`category`或`initial_value`。GVT add另需明确`initial_value:null`，新候选原生初值为空串，flags257、地址FFFFFFFF、空device及两尾0；后续地址由IDE分配；原生初值与界面“...”及隐藏预览分开记录。文件模式只写目标原生表，不新造或修改伴随CSV、不构造复杂默认；s30该批验收观察到：非空GVT的IDE保存精确追加缺少根名及四空槽；原生GVT为0项后的本case首次IDE保存，将旧1222字节CSV重建为相同BOM／三行header及当前两新根各四空槽，共290字节，旧16组／20条空槽行未保留。两种现象均保留独立前后原像及实际回读证据；这是s30该批验收工具对实际变化的逐case审查，不是公共CLI通用CSV守卫或通用reset能力。不命名四槽、推断reset原因或由工具构造CSV；其他未知变化停止审查。
+
+身份、未保存状态、准确选择器、全部定义哈希、并发CAS、唯一备份、旧记录／正文／不透明字段和完整原生／界面回读保护保持。s30该批限定原生验收、完整持久回读、组合及恢复0错误编译、关闭观察与最终恢复已完成；67原件／独立59源码／192文件集合全部起点SHA一致，differences=[]。原始失败、精确差量审计与只读续作分别保留。s30最终软件回归及完整本地交付已完成，实际包外回执另存，s29归档保持；仅本地，未安装或远端发布。
+
+文件模式继续用schema1的`targets[].variable_operations`，STRU与GVT字段分别如下（名称全部为占位，须换成准确登记文件和类型）：
+
+```json
+{"schema":1,"targets":[{"file":"Owner.stru","variable_operations":[{"op":"add","name":"newMember","data_type":"RegisteredInput","comment":""}]},{"file":"Globals.gvt","variable_operations":[{"op":"add","name":"newGlobal","data_type":"RegisteredComplex","initial_value":null,"comment":""}]}]}
+```
+
+先export冻结当前工程，再check/build核候选，显式apply后重新打开工程完整回读；只看到文件写入成功不能当成IDE加载或编译通过。同批先修改结构定义再新增其引用仍不自动取得新的资格，需按既有依赖基线规则分批刷新。方法二使用同样单表operations沿既有`table_editor_edit`，不改变关开工程、编译或PLC权限。
+
+s30[验收与交付证据](validation.md)记录实际完成结果，并导航至其规格与计划；本节是已完成批次的历史范围说明，不能代替当前工程的IDE加载或编译验证。

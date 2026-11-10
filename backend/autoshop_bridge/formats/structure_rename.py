@@ -3,8 +3,12 @@
 Only string spans are replaced. No address, type, order, opaque field or source
 reference is changed. A declaration rename is not a business-reference check.
 """
-from autoshop_bridge.errors import BridgeError
+from hashlib import sha256
+
+from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats import fb, tables
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
+from autoshop_bridge.formats.offline_variables import array_structure_initial
 from autoshop_bridge.formats.structure import comment_initializer
 
 
@@ -55,14 +59,65 @@ def initializer(value, definition, mapping):
                                for r in definition.rows)
 
 
+def fb_structure_reference(row, definitions):
+    """Identify related native defaults without qualifying unrelated types."""
+    if row.type_code == 64 and row.type_text in definitions:
+        return row.type_text, None
+    if row.type_code != 128 or row.type_text.split("[", 1)[0] not in definitions:
+        return None
+    root = row.type_text.split("[", 1)[0]
+    try:
+        shape = array_descriptor(row.type_text)
+        if shape is None or shape.element_type != root:
+            raise FormatRejection("Associated structure ARRAY descriptor is not implemented.",
+                                  context=dict(field="data_type", value=row.type_text))
+    except FormatRejection as exc:
+        exc.context.update(stage="structure_array_rename", variable=row.name,
+                           structure=root, profile="fb-structure-array-default-v1")
+        raise
+    return root, shape.dimensions
+
+
+def _array_initializer(row, definition, mapping, dimensions):
+    if not row.initial_raw:
+        return row.initial_raw  # No serialized member keys to synchronize.
+    context = dict(stage="structure_array_rename", variable=row.name,
+                   structure=definition.name, data_type=row.type_text,
+                   dimensions=list(dimensions), profile="fb-structure-array-default-v1")
+    try:
+        expected = array_structure_initial(definition.raw, definition.name, dimensions)
+        renamed, _, _ = structure(definition.raw, [dict(old=k, new=v) for k, v in mapping.items()])
+        replacement = array_structure_initial(renamed, definition.name, dimensions)
+    except FormatRejection as exc:
+        # Keep the exact member/field/value diagnostic from the default codec.
+        exc.context.update(context)
+        raise
+    if row.initial_raw != expected:
+        raise FormatRejection(
+            "Associated structure ARRAY initializer profile is not implemented: "
+            "variable={!r}, structure={!r}; the saved value is not the exact observed default.".format(
+                row.name, definition.name),
+            code="structure_array_rename_profile_unobserved",
+            context=dict(context, field="initial_value_raw", reason="nondefault_initializer",
+                         actual_length=len(row.initial_raw), expected_length=len(expected),
+                         actual_sha256=sha256(row.initial_raw.encode("utf-8")).hexdigest(),
+                         expected_sha256=sha256(expected.encode("utf-8")).hexdigest(),
+                         requires="independent_ide_sample"),
+        )
+    return replacement
+
+
 def fb_initializers(raw, definitions):
     obj = fb.parse(raw)
     replacements, updates = [], []
     for row in obj.variables:
-        if row.type_code != 64 or row.type_text not in definitions:
+        reference = fb_structure_reference(row, definitions)
+        if reference is None:
             continue
-        definition, mapping = definitions[row.type_text]
-        value = initializer(row.initial_raw, definition, mapping)
+        root, dimensions = reference
+        definition, mapping = definitions[root]
+        value = (initializer(row.initial_raw, definition, mapping) if dimensions is None
+                 else _array_initializer(row, definition, mapping, dimensions))
         if value == row.initial_raw:
             continue
         reader = fb.Reader(raw, row.offset, row.end)
@@ -70,7 +125,11 @@ def fb_initializers(raw, definitions):
         start = reader.pos
         reader.string()
         replacements.append((start, reader.pos, tables.string(value)))
-        updates.append(dict(variable=row.name, structure=row.type_text, field="initial_value_raw"))
+        update = dict(variable=row.name, structure=root, field="initial_value_raw")
+        if dimensions is not None:
+            update.update(data_type=row.type_text, dimensions=list(dimensions),
+                          profile="fb-structure-array-default-v1")
+        updates.append(update)
     result = replace_spans(raw, replacements)
     after = fb.parse(result)
     if (result[after.inner_offset - 4:] != raw[obj.inner_offset - 4:]

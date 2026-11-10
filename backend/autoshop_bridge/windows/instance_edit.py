@@ -39,6 +39,7 @@ def _document(value):
                 op["member"].encode("utf-8"); op["expected"].encode("utf-8"); op["value"].encode("utf-8")
             except UnicodeError as exc:
                 raise BridgeError("Invalid Unicode in instance initial-value edit.") from exc
+            ui.initial_member_paths([op["member"]])
         elif (set(op) != {"op", "name", "field", "expected", "value"}
               or op.get("field") not in ("name", "comment")):
             raise BridgeError("FBI editor fields are name/comment or initial_value with an explicit member path.")
@@ -73,7 +74,20 @@ def _assert_initial_root(rows, expected):
 def _preflight_members(adapter, raw, operations):
     native_rows = {row["name"]: row for row in instances.parse(raw)["instances"]}
     identities = {name: name for name in native_rows}
-    observed, baselines = {}, {}
+    observed, baselines, paths = {}, {}, {}
+    # Resolve every rename before the first toolbox collection: later requests
+    # must not add newly displayed members during a write/readback comparison.
+    for op in operations:
+        if op["name"] not in identities:
+            raise BridgeError("Expected one exact current FBI instance name.")
+        original = identities[op["name"]]
+        if op["field"] == "name":
+            del identities[op["name"]]
+            identities[op["value"]] = original
+        elif op["field"] == "initial_value":
+            paths.setdefault(original, []).append(op["member"])
+    paths = {name: ui.initial_member_paths(value) for name, value in paths.items()}
+    identities = {name: name for name in native_rows}
     for op in operations:
         if op["name"] not in identities:
             raise BridgeError("Expected one exact current FBI instance name.")
@@ -83,14 +97,77 @@ def _preflight_members(adapter, raw, operations):
             identities[op["value"]] = original
         elif op["field"] == "initial_value":
             if original not in observed:
-                observed[original] = copy.deepcopy(adapter.initial_members(original))
+                observed[original] = copy.deepcopy(_read_members(adapter, original, paths[original]))
                 _assert_initial_root(observed[original], native_rows[original])
                 baselines[original] = copy.deepcopy(observed[original])
             row = _member_row(observed[original], original, op["member"])
+            ui.assert_initial_scalar(row, op["member"])
             if row["initial_value"] != op["expected"]:
                 raise BridgeError("Instance initial-value member baseline differs: " + op["member"])
             row["initial_value"] = op["value"]
-    return {name: dict(before=baselines[name], expected=rows) for name, rows in observed.items()}
+    return {name: dict(before=baselines[name], expected=rows, paths=paths[name]) for name, rows in observed.items()}
+
+
+def _read_members(adapter, name, paths):
+    try:
+        if getattr(adapter, "initial_member_paths_supported", False):
+            return adapter.initial_members(name, member_paths=paths)
+        if any("." in path for path in paths):
+            raise BridgeError("This editor adapter does not support explicit nested initial-value paths.")
+        return adapter.initial_members(name)
+    except BridgeError as exc:
+        if not getattr(adapter, "physical_initial_selection", False):
+            raise
+        context = dict(getattr(exc, "context", {}))
+        context.update(_physical_selection_details(adapter), automatic_retry=False)
+        raise FormatRejection(str(exc), code=getattr(exc, "code", "physical_initial_read_stopped"), context=context) from exc
+
+
+def _set_member(adapter, name, member, expected, value, paths):
+    if getattr(adapter, "initial_member_paths_supported", False):
+        return adapter.set_initial_member(name, member, expected, value, member_paths=paths)
+    return adapter.set_initial_member(name, member, expected, value)
+
+
+def _physical_selection_details(adapter):
+    if not getattr(adapter, "physical_initial_selection", False):
+        return {}
+    receipts = copy.deepcopy(getattr(adapter, "initial_physical_selection_receipts", []))
+    return dict(physical_selection=True, selection_mode="physical",
+                physical_selection_receipt=receipts[-1] if receipts else None,
+                physical_selection_receipts=receipts)
+
+
+def _selection_baseline(adapter, rows, raw=None):
+    if getattr(adapter, "physical_initial_selection", False):
+        adapter.initial_selection_expected_rows = copy.deepcopy(rows)
+        if raw is not None:
+            adapter.initial_selection_native_sha256 = sha256(raw)
+            adapter.initial_selection_native_names = [row["name"] for row in instances.parse(raw)["instances"]]
+
+
+def _renamed_members(before, old, new, actual):
+    """Permit only the requested instance prefix replacement.
+
+    The IDE's full-name prefix is case insensitive (already checked by the
+    reader); the suffix and every other field remain exact. Preserve the
+    observed spelling only after verifying that precise replacement.
+    """
+    wanted = copy.deepcopy(before)
+    if len(wanted) != len(actual):
+        raise BridgeError("FBI rename changed the complete member collection.")
+    wanted[0]["name"] = new
+    for expected, observed in zip(wanted, actual):
+        full = expected["full_name"]
+        prefix, suffix = full[:len(old)], full[len(old):]
+        replacement = observed["full_name"]
+        if (prefix.casefold() != old.casefold() or replacement[:len(new)].casefold() != new.casefold()
+                or replacement[len(new):] != suffix):
+            raise BridgeError("FBI rename changed an unrequested member identity.")
+        expected["full_name"] = replacement
+    if actual != wanted:
+        raise BridgeError("FBI rename changed unrequested initial-value member fields.")
+    return wanted
 
 
 def reference_changes(before, after, renames):
@@ -191,6 +268,8 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                    save=False, close_after=False, dry_run=False, backup_root=None):
     operations = _document(document)
     target = Path(target)
+    if dry_run and getattr(adapter, "physical_initial_selection", False):
+        raise BridgeError("Dry run cannot request physical mouse selection.")
     if close_after and not save:
         raise BridgeError("--close requires --save.")
     if save:
@@ -207,6 +286,7 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
         if before["modified"]:
             raise BridgeError("FBI editor has unsaved changes.")
         ui.assert_native(raw, before["rows"])
+        _selection_baseline(adapter, before["rows"], raw)
         member_preflight = _preflight_members(adapter, raw, operations)
         _check_scope(guard)
         _assert_current(sources)
@@ -218,7 +298,7 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
         if not edited:
             if close_after:
                 adapter.close()
-            return dict(status="unchanged_closed" if close_after else "unchanged")
+            return dict(status="unchanged_closed" if close_after else "unchanged", **_physical_selection_details(adapter))
         renaming = any(op["field"] == "name" and op["expected"] != op["value"] for op in operations)
         backups = {}
         protected = dict(sources, **guard.get("metadata", {})) if renaming else {str(target): raw}
@@ -232,6 +312,10 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
             raise BridgeError("FBI editor changed during backup.")
         _assert_current(sources)
         current = copy.deepcopy(before["rows"])
+        member_paths_by_index = {index: member_preflight[row["name"]]["paths"]
+                                 for index, row in enumerate(current) if row["name"] in member_preflight}
+        expected_members = {index: copy.deepcopy(member_preflight[row["name"]]["before"])
+                            for index, row in enumerate(current) if row["name"] in member_preflight}
         updates, completed = [], []
         member_indices, member_results = set(), {}
         try:
@@ -247,16 +331,21 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                 index = next(i for i, row in enumerate(desired) if row["name"] == name)
                 row = desired[index]
                 if field == "initial_value":
-                    members = adapter.initial_members(name)
+                    paths = member_paths_by_index[index]
+                    members = _read_members(adapter, name, paths)
                     _assert_initial_root(members, row)
+                    if members != expected_members[index]:
+                        raise BridgeError("FBI complete initial-value member baseline changed before edit.")
                     member = _member_row(members, name, operation["member"])
+                    ui.assert_initial_scalar(member, operation["member"])
                     if member["initial_value"] != old:
                         raise BridgeError("FBI initial member changed before edit.")
-                    wanted = copy.deepcopy(members)
+                    wanted = copy.deepcopy(expected_members[index])
                     _member_row(wanted, name, operation["member"])["initial_value"] = value
-                    actual_members = adapter.set_initial_member(name, operation["member"], old, value)
+                    actual_members = _set_member(adapter, name, operation["member"], old, value, paths)
                     if actual_members != wanted:
                         raise BridgeError("Full instance member readback differs after initial-value edit.")
+                    expected_members[index] = wanted
                     actual = adapter.grid()
                     if len(actual) != len(desired):
                         raise BridgeError("FBI initial-value edit changed declaration count.")
@@ -268,8 +357,22 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                         raise BridgeError("FBI editor field baseline differs.")
                     row[field] = value
                     actual = adapter.set_cell(name, field, old, value)
+                    if actual != desired:
+                        raise BridgeError("FBI full-table readback differs after field edit.")
+                    _selection_baseline(adapter, desired)
+                    if index in expected_members:
+                        # Declaration edits may rebuild the toolbox. Rebind all
+                        # requested paths, permitting only explicit metadata edits.
+                        members = _read_members(adapter, row["name"], member_paths_by_index[index])
+                        if field == "name":
+                            expected_members[index] = _renamed_members(expected_members[index], old, value, members)
+                        else:
+                            expected_members[index][0]["comment"] = value
+                            if members != expected_members[index]:
+                                raise BridgeError("FBI comment edit changed unrequested initial-value member fields.")
                 if actual != desired:
                     raise BridgeError("FBI full-table readback differs after field edit.")
+                _selection_baseline(adapter, desired)
                 assert_hash(target, expected)
                 others = {p: data for p, data in sources.items() if p != str(target)}
                 after = _current(others)
@@ -289,6 +392,15 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                           references_may_be_saved_before_target=renaming,
                           reference_completeness_checked=False, autoshop_compile_verified=False)
             if save:
+                before_save_members = {}
+                for index in sorted(expected_members):
+                    before_save_members[index] = _read_members(adapter, current[index]["name"], member_paths_by_index[index])
+                    _assert_initial_root(before_save_members[index], current[index])
+                    if before_save_members[index] != expected_members[index]:
+                        raise BridgeError("FBI complete initial-value member baseline changed before save.")
+                for (index, _), (member, value) in member_results.items():
+                    if _member_row(before_save_members[index], current[index]["name"], member)["initial_value"] != value:
+                        raise BridgeError("Final initial-value member baseline differs before save.")
                 adapter.save()
                 saved = target.read_bytes()
                 saved_rows = instances.parse(saved)["instances"]
@@ -304,16 +416,19 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                 if saved != candidate or adapter.dirty() or adapter.grid() != current:
                     raise BridgeError("Saved FBI differs from exact field candidate/table.")
                 ui.assert_native(saved, current)
+                _selection_baseline(adapter, current, saved)
                 sources[str(target)] = saved
                 _assert_current(sources)
                 _check_scope(guard)
                 result.update(status="instances_fields_saved", sha256=sha256(saved), requires_manual_save=False)
-                if member_indices:
+                if expected_members:
                     actual_members = {}
-                    for index in sorted(member_indices):
+                    for index in sorted(expected_members):
                         name = current[index]["name"]
-                        actual_members[index] = adapter.initial_members(name)
+                        actual_members[index] = _read_members(adapter, name, member_paths_by_index[index])
                         _assert_initial_root(actual_members[index], current[index])
+                        if actual_members[index] != before_save_members[index]:
+                            raise BridgeError("Saved complete initial-value member collection differs.")
                     for (index, _), (member, value) in member_results.items():
                         if _member_row(actual_members[index], current[index]["name"], member)["initial_value"] != value:
                             raise BridgeError("Saved initial-value member readback differs.")
@@ -327,19 +442,28 @@ def edit_connected(adapter, target, opened, document, expected, *, guard,
                 if close_after:
                     adapter.close()
                     result["status"] = "instances_fields_saved_closed"
+            result.update(_physical_selection_details(adapter))
+            if getattr(adapter, "physical_initial_selection", False):
+                write_json_new(backup / "physical_selection_receipts.json", result["physical_selection_receipts"])
             write_json_new(backup / "field_result.json", result)
             return result
         except (BridgeError, OSError) as exc:
+            if getattr(adapter, "physical_initial_selection", False):
+                write_json_new(backup / "physical_selection_failure_receipts.json", _physical_selection_details(adapter))
             write_json_new(backup / "field_failure.json", dict(error=str(exc), completed_operations=completed,
                            reference_updates=updates, automatic_retry=False, automatic_rollback=False))
             raise BridgeError("{} FBI buffer or associated sources may have changed; inspect backup {}.".format(exc, backup)) from exc
 
 
 def edit(project, table, changes, expected, pid=None, open_if_missing=False,
-         save=False, close_after=False, experimental=False, dry_run=False, backup_root=None):
+         save=False, close_after=False, experimental=False, dry_run=False, backup_root=None, physical_select=False):
     from autoshop_bridge.workflows.declarations import validate_hash
     from autoshop_bridge.windows.project_lifecycle import WindowsProjectDriver
     validate_hash(expected)
+    if type(physical_select) is not bool:
+        raise BridgeError("physical_select must be an explicit boolean.")
+    if physical_select and dry_run:
+        raise BridgeError("Dry run cannot request physical mouse selection.")
     if not experimental and not dry_run:
         raise BridgeError("FBI editor modifications require --experimental.")
     if dry_run and open_if_missing:
@@ -347,6 +471,8 @@ def edit(project, table, changes, expected, pid=None, open_if_missing=False,
     document = read_json(changes)
     _document(document)
     adapter, target, opened, inventory = ui.connect(project, table, pid, open_if_missing)
+    adapter.physical_initial_selection = physical_select
+    adapter.initial_physical_selection_receipts = []
     state = WindowsProjectDriver(Path(inventory["project_file"]), adapter.pid).snapshot()
     if any(state[key] for key in ("dirty", "cell_edits", "dialogs", "duplicates")):
         raise BridgeError("Project has unsaved contents, active cell edits or unknown dialogs.")
@@ -355,14 +481,19 @@ def edit(project, table, changes, expected, pid=None, open_if_missing=False,
                           save=save, close_after=close_after, dry_run=dry_run, backup_root=backup_root)
 
 
-def read_initial(project, table, instance, pid=None, open_if_missing=False, output=None):
+def read_initial(project, table, instance, pid=None, open_if_missing=False, output=None, *, member_paths=None, physical_select=False):
     """Observe actual selected-instance values, distinct from the saved string."""
     if not isinstance(instance, str) or not instance.isidentifier():
         raise BridgeError("Expected an exact instance identifier.")
+    paths = ui.initial_member_paths(member_paths)
+    if type(physical_select) is not bool:
+        raise BridgeError("physical_select must be an explicit boolean.")
     adapter, target, opened, _ = ui.connect(project, table, pid, open_if_missing)
+    adapter.physical_initial_selection = physical_select
+    adapter.initial_physical_selection_receipts = []
     raw = target.read_bytes()
     native_rows = [row for row in instances.parse(raw)["instances"] if row["name"] == instance]
-    members = adapter.initial_members(instance)
+    members = _read_members(adapter, instance, paths)
     modified = adapter.dirty()
     if not modified and len(native_rows) == 1:
         _assert_initial_root(members, native_rows[0])
@@ -374,6 +505,12 @@ def read_initial(project, table, instance, pid=None, open_if_missing=False, outp
                   members=members, member_count=len(members)-1,
                   scope="currently displayed members of the exact selected instance",
                   selection_changed=True)
+    result.update(_physical_selection_details(adapter))
+    if member_paths is not None:
+        result["requested_member_paths"] = list(paths)
+        result["expansion_steps"] = copy.deepcopy(getattr(adapter, "last_initial_expansions", []))
+    if hasattr(adapter, "last_initial_read"):
+        result["collection"] = copy.deepcopy(adapter.last_initial_read)
     if target.read_bytes() != raw:
         raise BridgeError("FBI native source changed during initial-value read.")
     if output:

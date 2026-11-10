@@ -4,7 +4,7 @@ import copy
 from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError
-from autoshop_bridge.formats.fb import parse, Reader
+from autoshop_bridge.formats.fb import parse, Reader, array_comment_display
 from autoshop_bridge.formats.scalar_types import STRING_DEFAULT_LENGTH
 from autoshop_bridge.formats.tables import identifier
 from autoshop_bridge.projects import types as type_context
@@ -44,7 +44,7 @@ def validate_value(field, value, row):
     if row["data_type"] == "BOOL" and value in ("OFF", "ON"):
         return
     scalar=type_context.descriptor(row["data_type"])
-    if scalar is not None and scalar.code in (32,2048):
+    if scalar is not None and scalar.code in (32,2048,4096,8192):
         # The native initializer is an explicit source string. AutoShop/compiler owns
         # expression and numeric semantics; retain the bounded representation
         # checks above and require exact full-field readback after editing.
@@ -62,7 +62,7 @@ def validate_value(field, value, row):
         ):
             return
     raise BridgeError(
-        "Unsupported scalar initial value/type; BOOL uses OFF/ON, INT/DINT use canonical integers, REAL/STRING retain the explicit string."
+        "Unsupported scalar initial value/type; BOOL uses OFF/ON, INT/DINT use canonical integers, REAL/STRING/BYTE/IP retain the explicit string."
     )
 
 
@@ -129,15 +129,21 @@ def validate_changes(document, rows, types=None):
             ):
                 raise BridgeError("Invalid or duplicate variable definition.")
             scalar=type_context.descriptor(op['data_type'])
-            code = scalar.code if scalar is not None else types.get(op['data_type'],{}).get('code')
+            array=type_context.array_descriptor(op['data_type'])
+            definition=types.get(op['data_type'],{})
+            array_allowed=array is not None and (type_context.builtin_array(op['data_type']) is not None
+                or (definition.get('code')==128 and definition.get('element_code')==64
+                    and definition.get('element_type')==array.element_type and definition.get('path')))
+            code = (scalar.code if scalar is not None else array.code if array_allowed else None
+                    if array is not None else definition.get('code'))
             if (
                 code is None
                 or (code in (256, "ide_resolved") and op["category"] != "VAR")
             ):
                 raise BridgeError(
-                    "Only scalar/structure variables and ordinary VAR FB instances are enabled."
+                    "Only supported scalar/ARRAY/structure variables and ordinary VAR FB instances are enabled."
                 )
-            default = op["category"] == "INOUT" or code in (64, 256, "ide_resolved")
+            default = op["category"] == "INOUT" or code in (64, 128, 256, "ide_resolved")
             if default and op["initial_value"] is not None:
                 raise BridgeError(
                     "INOUT/complex additions require initial_value=null (IDE defaults)."
@@ -145,7 +151,7 @@ def validate_changes(document, rows, types=None):
             row = {
                 "row": str(len(planned) + 1),
                 "name": op["name"],
-                "data_type": scalar.canonical if scalar is not None else op["data_type"],
+                "data_type": scalar.canonical if scalar is not None else array.canonical if array is not None else op["data_type"],
                 "category": op["category"],
                 "initial_value": op["initial_value"],
                 "initial_raw": op["initial_value"],
@@ -226,7 +232,8 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
     for var in new.variables[len(old.variables) :]:
         op = additions[var.name]
         scalar=type_context.descriptor(op['data_type'])
-        code = scalar.code if scalar is not None else types.get(op['data_type'],{}).get('code')
+        array=type_context.array_descriptor(op['data_type'])
+        code = scalar.code if scalar is not None else array.code if array is not None else types.get(op['data_type'],{}).get('code')
         if code == "ide_resolved":
             if var.type_code not in (64, 256):
                 raise BridgeError("Saved IDE named type has an unsupported native descriptor: "
@@ -234,7 +241,18 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
             code = var.type_code
         initial = op["initial_value"]
         complex_default = initial is None and code in (64, 256)
-        if initial is None and not complex_default:
+        if array is not None and type_context.builtin_array(op['data_type']) is not None:
+            # Normal saved ARRAY defaults are empty native text, independently
+            # of the hidden monitor preview. Do not substitute that preview.
+            initial=''
+        elif array is not None:
+            definition=types.get(op['data_type'],{})
+            if definition.get('element_code')!=64 or definition.get('element_type')!=array.element_type:
+                raise BridgeError('Named ARRAY element differs from its frozen structure definition.')
+            if expected_rows is None:raise BridgeError('Named ARRAY defaults require the complete actual UI hidden field.')
+            initial=next(row for row in expected_rows if row['name']==var.name)['initial_raw']
+            if not isinstance(initial,str):raise BridgeError('Named ARRAY actual UI hidden field is not a complete string.')
+        elif initial is None and not complex_default:
             if expected_rows is None:
                 raise BridgeError("IDE defaults require captured expected rows.")
             initial = next(r for r in expected_rows if r["name"] == var.name)[
@@ -244,8 +262,10 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
             type_differs=var.type_text not in (op['data_type'],op['data_type'].upper())
         elif code==64:
             type_differs=var.type_text!=op['data_type']
-        elif code==2048:
+        elif code in (2048,4096,8192):
             type_differs=scalar is None or var.type_text!=scalar.type_text
+        elif code==128:
+            type_differs=array is None or var.type_text!=array.canonical
         else:
             type_differs=var.type_text not in ('',op['data_type'])
         if (
@@ -258,7 +278,8 @@ def verify_native_preserved(before, after, operations, types=None, expected_rows
                 0xFFFFFFFF,
                 0,
             )
-            or var.comment != changes.get((var.name, "comment"), op["comment"])
+            or (array_comment_display(var.comment) if code == 128 else var.comment)
+            != changes.get((var.name, "comment"), op["comment"])
             or (
                 not complex_default
                 and var.initial_raw != changes.get((var.name, "initial_value"), initial)
@@ -323,7 +344,7 @@ def edit(
         ]
         context = (
             type_context.ide_catalog(project, requested, target.stem, target=target)
-            if any(type_context.descriptor(name) is None for name in requested)
+            if any(type_context.descriptor(name) is None and type_context.builtin_array(name) is None for name in requested)
             else dict(types={}, hashes={})
         )
         type_context.check(context)
@@ -450,6 +471,11 @@ def edit(
                             op["name"], "data_type", "BOOL", op["data_type"]
                         )
                         scalar=type_context.descriptor(op['data_type'])
+                        array=type_context.array_descriptor(op['data_type'])
+                        if array is not None:
+                            if not type_context.array_ui_type_matches(array,actual[-1]['data_type']):
+                                raise BridgeError('ARRAY selection returned a different element type or dimensions.')
+                            desired[-1]['data_type']=actual[-1]['data_type']
                         if scalar is not None and scalar.code==2048:
                             allowed_types=(scalar.canonical,'STRING') if scalar.string_length==STRING_DEFAULT_LENGTH else (scalar.canonical,)
                             if actual[-1]['data_type'] not in allowed_types:
@@ -540,7 +566,14 @@ def edit(
                 verify_native_preserved(
                     raw, target.read_bytes(), operations, context["types"], current
                 )
+                type_context.check(context)
                 new_obj = parse(target.read_bytes())
+                named_arrays={op['name'] for op in operations if op['op']=='add'
+                              and type_context.structure_array(op['data_type']) is not None}
+                if named_arrays:
+                    result['array_initialization']=dict(scope='native initial CString equals frozen actual complete UI hidden field; no default-grammar generation',
+                        native=[v.as_dict(i) for i,v in enumerate(new_obj.variables) if v.name in named_arrays],
+                        editor=[row for row in current if row['name'] in named_arrays])
                 if "named_type_resolution" in result:
                     result["named_type_resolution"] = dict(
                         status="native_verified", variables=[

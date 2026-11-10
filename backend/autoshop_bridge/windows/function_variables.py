@@ -1,16 +1,19 @@
 """Six-column FC edits; no invented initializer or retention state."""
 
 import copy
+from pathlib import Path
 
 from autoshop_bridge.errors import BridgeError
-from autoshop_bridge.formats import fc
+from autoshop_bridge.formats import fc, tables
 from autoshop_bridge.formats.fb import Reader
 from autoshop_bridge.formats.tables import identifier
 from autoshop_bridge.formats.scalar_types import STRING_DEFAULT_LENGTH
 from autoshop_bridge.projects.identifiers import precheck_addition_names
-from autoshop_bridge.projects.types import descriptor, selector_name
-from autoshop_bridge.storage import assert_hash, create_backup, target_lock, write_json_new
+from autoshop_bridge.projects import types as type_context
+from autoshop_bridge.projects.types import descriptor, selector_name, builtin_array, array_ui_type_matches, array_descriptor
+from autoshop_bridge.storage import assert_hash, create_backup, regular_file, target_lock, write_json_new
 from autoshop_bridge.windows.session import assert_clean_native, snapshot, verify_saved
+from autoshop_bridge.formats.offline_fc import rebuild as rebuild_fc, NUMERIC_SCALARS
 
 
 def verify_native_preserved(before, after, operations):
@@ -28,24 +31,28 @@ def verify_native_preserved(before, after, operations):
     added=[op['name'] for op in operations if op['op']=='add']
     if [v.name for v in new.variables]!=[v.name for v in old.variables]+added:
         raise BridgeError('FC variable save changed native record ordering/count.')
-    comments={op['name']:op['value'] for op in operations if op['op']=='set'}
+    numeric_sets=[op for op in operations if op['op']=='set' and op['field'] in ('category','data_type')]
+    expected_raw=rebuild_fc(before,numeric_sets) if numeric_sets else before
+    expected=fc.parse(expected_raw)
+    comments={op['name']:op['value'] for op in operations if op['op']=='set' and op['field']=='comment'}
     def regions(raw,var):
         reader=Reader(raw,var.offset,var.end)
         reader.string();reader.u32();reader.string();start=reader.pos
         reader.string();end=reader.pos
         return raw[var.offset:start],raw[start:end],raw[end:var.end]
-    for left,right in zip(old.variables,new.variables):
-        a,b=regions(before,left),regions(after,right)
+    for left,right in zip(expected.variables,new.variables):
+        a,b=regions(expected_raw,left),regions(after,right)
         if (a[0]!=b[0] or a[2]!=b[2]
                 or (left.name not in comments and a[1]!=b[1])
                 or right.comment!=comments.get(left.name,left.comment)):
             raise BridgeError('FC variable save changed unrequested native record bytes: '+left.name)
 
 
-def validate(document, rows):
+def validate(document, rows, types=None):
     from autoshop_bridge.windows.variables import validate_value
 
     precheck_addition_names(document)
+    types=types or {}
     if not isinstance(document, dict) or set(document) != {"schema", "operations"} or document["schema"] != 1:
         raise BridgeError("FC changes require schema=1 and operations.")
     operations = document["operations"]
@@ -56,22 +63,36 @@ def validate(document, rows):
         if not isinstance(op, dict):
             raise BridgeError("FC operation must be an object.")
         if op.get("op") == "set":
-            if set(op) != {"op", "name", "field", "expected", "value"} or op["field"] != "comment":
-                raise BridgeError("FC set only supports comment; no initializer/retention columns exist.")
+            if set(op) != {"op", "name", "field", "expected", "value"} or op["field"] not in ("comment", "category", "data_type"):
+                raise BridgeError("FC set supports comment/category/numeric data_type; no initializer/retention columns exist.")
             matches = [r for r in planned if r["name"] == op["name"]]
-            if len(matches) != 1 or not isinstance(op["expected"], str) or matches[0]["comment"] != op["expected"]:
-                raise BridgeError("FC variable comment baseline differs.")
-            validate_value("comment", op["value"], matches[0])
-            matches[0]["comment"] = op["value"]
+            if len(matches) != 1 or not isinstance(op["expected"], str) or matches[0][op['field']] != op["expected"]:
+                raise BridgeError("FC variable field baseline differs.")
+            field=op['field']
+            if field=='comment':
+                validate_value("comment", op["value"], matches[0])
+            elif (matches[0]['data_type'] not in NUMERIC_SCALARS
+                  or not isinstance(op['value'],str)
+                  or op['value'] not in (NUMERIC_SCALARS if field=='data_type' else ('VAR','IN','OUT','INOUT'))
+                  or not any(row['name']==op['name'] for row in rows)):
+                raise BridgeError('FC category/type set requires an existing numeric scalar row and an observed value.')
+            matches[0][field] = op["value"]
         elif op.get("op") == "add":
             if set(op) != {"op", "name", "data_type", "category", "initial_value", "comment"}:
                 raise BridgeError("FC add requires name/category/data_type/initial_value/comment.")
+            array=array_descriptor(op['data_type'])
+            definition=types.get(op['data_type'],{}) if isinstance(op['data_type'],str) else {}
+            named_array=(array is not None and definition.get('code')==128 and definition.get('element_code')==64
+                         and definition.get('element_type')==array.element_type and definition.get('path'))
+            named_root=(array is None and definition.get('code')==64 and definition.get('path')
+                        and isinstance(op['data_type'],str) and op['data_type'].isidentifier())
             if (not identifier(op["name"]) or op["category"] not in ("VAR", "IN", "OUT", "INOUT")
-                    or descriptor(op["data_type"]) is None
+                    or (descriptor(op["data_type"]) is None and builtin_array(op['data_type']) is None
+                        and not named_array and not named_root)
                     or op["initial_value"] is not None
                     or any(r["name"].casefold() == op["name"].casefold() for r in planned)
                     or len(planned) >= 4096):
-                raise BridgeError("FC additions require unique scalar variables and initial_value=null.")
+                raise BridgeError("FC additions require unique supported scalar/ARRAY/structure-root variables and initial_value=null.")
             validate_value("comment", op["comment"], {})
             planned.append(dict(name=op["name"], data_type=op["data_type"], category=op["category"], comment=op["comment"]))
         else:
@@ -85,7 +106,24 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
         raw = assert_hash(target, expected.lower())
         original = assert_clean_native(adapter, target, raw)
         before = snapshot(adapter, target)
-        operations = validate(document, before["variables"])
+        raw_operations=document.get('operations') if isinstance(document,dict) else None
+        named=[op['data_type'] for op in raw_operations if isinstance(op,dict) and op.get('op')=='add'
+               and isinstance(op.get('data_type'),str) and descriptor(op['data_type']) is None
+               and builtin_array(op['data_type']) is None] if isinstance(raw_operations,list) else []
+        context=(type_context.ide_catalog(Path(adapter.project),named,target.stem,target=target) if named else dict(types={},hashes={}))
+        type_context.check(context)
+        for dtype in named:
+            definition=context['types'].get(dtype,{})
+            if definition.get('code')==64 and definition.get('path'):
+                tables.registered_structure_definition(dtype,
+                    {dtype:regular_file(Path(definition['path'])).read_bytes()})
+        type_context.check(context)
+        operations = validate(document, before["variables"],context['types'])
+        native_sets=[op for op in operations if op['op']=='set' and op['field'] in ('category','data_type')]
+        if native_sets:
+            # Qualify the real input CString/code/three-tail profile before any
+            # backup or UI mutation; a displayed type alone is insufficient.
+            rebuild_fc(raw,native_sets)
         additions = [op for op in operations if op["op"] == "add"]
         if dry_run:
             return dict(status="variables_ready", operations=operations, variable_count=len(before["variables"]),
@@ -99,6 +137,7 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
         saved = create_backup(target, raw, backup_root, "fc_editor_variables")
         write_json_new(saved / "editor_before.json", before)
         write_json_new(saved / "variable_changes.json", document)
+        write_json_new(saved / 'type_context.json',context)
         again = snapshot(adapter, target)
         if any(again[k] != before[k] for k in ("source", "variables", "native_sha256", "modified")):
             raise BridgeError("FC changed during variable backup.")
@@ -106,6 +145,7 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
         current = copy.deepcopy(before["variables"])
 
         def check_body_and_disk():
+            type_context.check(context)
             if adapter.read().source.decode("utf-8") != before["source"]:
                 raise BridgeError("FC variable edit changed body.")
             assert_hash(target, expected.lower())
@@ -118,6 +158,12 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
                 return
             actual = adapter.set_cell(name, field, old, value)
             scalar=descriptor(value) if field=='data_type' else None
+            array=array_descriptor(value) if field=='data_type' else None
+            if array is not None:
+                row=next(r for r in actual if r['name']==name)
+                if not array_ui_type_matches(array,row['data_type']):
+                    raise BridgeError('FC ARRAY selection returned different element type or dimensions.')
+                next(r for r in desired if r['name']==name)['data_type']=row['data_type']
             if scalar is not None and scalar.code==2048:
                 row=next(r for r in actual if r['name']==name)
                 allowed_types=(scalar.canonical,'STRING') if scalar.string_length==STRING_DEFAULT_LENGTH else (scalar.canonical,)
@@ -136,15 +182,14 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
                 raise BridgeError("FC type/category selector differs.")
 
         try:
-            deferred_selector = bool(additions and not current)
+            probe = next((r for r in current if descriptor(r['data_type']) is not None), None)
+            deferred_selector = bool(additions and probe is None)
             if additions and current:
-                probe = next((r for r in current if descriptor(r["data_type"]) is not None), None)
-                if probe is None:
-                    raise BridgeError("A scalar FC row is required for type-selector preflight.")
-                inspect_selectors(probe)
-                again = snapshot(adapter, target)
-                if any(again[k] != before[k] for k in ("source", "variables", "native_sha256", "modified")):
-                    raise BridgeError("FC selector inspection changed the document.")
+                if probe is not None:
+                    inspect_selectors(probe)
+                    again = snapshot(adapter, target)
+                    if any(again[k] != before[k] for k in ("source", "variables", "native_sha256", "modified")):
+                        raise BridgeError("FC selector inspection changed the document.")
             for op in operations:
                 if op["op"] == "add":
                     actual = adapter.set_cell("#row:" + str(len(current) + 1), "name", "", op["name"])
@@ -173,7 +218,7 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
                     set_field(op["name"], "data_type", "BOOL", op["data_type"])
                     set_field(op["name"], "comment", "", op["comment"])
                 else:
-                    set_field(op["name"], "comment", op["expected"], op["value"])
+                    set_field(op["name"], op['field'], op["expected"], op["value"])
             after = snapshot(adapter, target)
             if (after["variables"] != current or not after["modified"]
                     or after["source"] != before["source"] or after["native_sha256"] != before["native_sha256"]):
@@ -188,17 +233,19 @@ def edit_connected(adapter, target, opened, document, expected, save, close_afte
                 saved_raw=assert_hash(target,digest)
                 verify_native_preserved(raw,saved_raw,operations)
                 obj = fc.parse(saved_raw)
-                for old, new in zip(original.variables, obj.variables):
-                    if (old.name, old.type_text, old.type_code, old.fields) != (new.name, new.type_text, new.type_code, new.fields):
-                        raise BridgeError("FC save changed original variable definitions/opaque fields.")
                 final_rows={row['name']:row for row in after['variables']}
                 for op,new in zip(additions,obj.variables[len(original.variables):]):
                     scalar=descriptor(op['data_type'])
-                    if (new.name!=op['name'] or new.type_code!=scalar.code
-                            or (new.type_text!=scalar.type_text if scalar.code==2048 else new.type_text not in ('',scalar.canonical))
+                    array=array_descriptor(op['data_type'])
+                    code=array.code if array is not None else scalar.code if scalar is not None else context['types'][op['data_type']]['code']
+                    type_differs=(new.type_text!=array.canonical if array is not None else
+                                  new.type_text!=op['data_type'] if scalar is None else
+                                  new.type_text!=scalar.type_text if scalar.code in (2048,4096,8192) else new.type_text not in ('',scalar.canonical))
+                    if (new.name!=op['name'] or new.type_code!=code or type_differs
                             or new.fields!=({'VAR':0,'IN':1,'OUT':2,'INOUT':3}[op['category']],0xffffffff,0)
                             or new.comment!=final_rows[op['name']]['comment']):
-                        raise BridgeError('FC saved scalar descriptor/category/length differs from the requested declaration.')
+                        raise BridgeError('FC saved descriptor/category/length differs from the requested declaration.')
+                type_context.check(context)
                 result.update(status="variables_saved", sha256=digest, requires_manual_save=False)
                 if close_after:
                     adapter.close()

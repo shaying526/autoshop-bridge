@@ -22,6 +22,39 @@ def tree(root):
     return {p.relative_to(root).as_posix(): digest(p) for p in root.rglob("*") if p.is_file()}
 
 
+def array_wire_record(host, name, dtype, comment, category=0, initial=""):
+    """Independent literal oracle for this smoke's observed ARRAY records.
+
+    No production descriptor, CString encoder or candidate builder participates
+    in these expected bytes. This is a small fixture oracle, not another codec.
+    """
+    def text(value):
+        raw = value.encode("utf-8")
+        assert len(raw) < 255, "Smoke oracle only uses short literal CStrings"
+        return bytes([len(raw)]) + raw
+
+    if host == "fb":
+        return (text(dtype) + struct.pack("<I", 128) + text(name) + text(comment)
+                + text(initial) + struct.pack("<IIII", category, 1, 0xffffffff, 0))
+    if host == "fc":
+        return (text(dtype) + struct.pack("<I", 128) + text(name) + text(comment)
+                + struct.pack("<III", category, 0xffffffff, 0))
+    if host == "stru":
+        return text(dtype) + struct.pack("<I", 128) + text(name) + text(comment)
+    assert host == "gvt" and initial == ""
+    element, count, element_text, tail = {
+        "DINT[5]": (16, 5, "", (0, 1, 1)),
+        "STRING<128>[2]": (2048, 2, "STRING<128>", (0, 1, 1)),
+        "InputData[2,3]": (64, 6, "InputData", (1, 2, 3)),
+    }[dtype]
+    return (struct.pack("<II", 128, 128) + text(name) + text("")
+            + struct.pack("<II", 257, 0xffffffff) + text(comment)
+            + b"\xff\xfe\xff\0" + struct.pack("<II", 0, 0) + b"\0"
+            + struct.pack("<III", 128, element, count)
+            + (text(element_text) if element_text else b"")
+            + struct.pack("<III", *tail))
+
+
 def fixtures(project):
     sys.path.insert(0, str(SKILL / "backend"))
     from autoshop_bridge.formats import st, tables, empty_table
@@ -263,6 +296,81 @@ def run(output):
                     assert row["uninterpreted_metadata"]["address_raw"] == 0xffffffff
                 for name in set(baseline) - {"Logic.FB", "MAIN.ST", "Globals.gvt", "Calc.FC", "EmptyCalc.FC", "Instances.fbi"}:
                     assert digest(project / name) == baseline[name], name
+                # Separate four-host ARRAY batch: InputData is the untouched
+                # registered element root; only OutputData receives new members.
+                # Every complex default is null in the request, and the FB
+                # named-array template below is a literal independent oracle.
+                before_arrays = tree(project)
+                array_originals = {name: (project / name).read_bytes() for name in
+                    ("Logic.FB", "Calc.FC", "OutputData.stru", "Globals.gvt")}
+                array_specs = {
+                    "Logic.FB": (("aLocalGrid", "INT[3,2]", "VAR"),
+                                 ("aOutputText", "STRING<20>[2,3]", "OUT"),
+                                 ("aInputDataRef", "InputData[2]", "INOUT")),
+                    "Calc.FC": (("aRealOutput", "REAL[4]", "OUT"),
+                                ("aTextInput", "STRING<128>[2]", "IN"),
+                                ("aDataRef", "InputData[2,3]", "INOUT")),
+                    "OutputData.stru": (("aMemberFlags", "BOOL[2]", None),
+                                        ("aMemberText", "STRING<20>[2,3]", None),
+                                        ("aMemberData", "InputData[2,3]", None)),
+                    "Globals.gvt": (("gaValues", "DINT[5]", None),
+                                    ("gaText", "STRING<128>[2]", None),
+                                    ("gaData", "InputData[2,3]", None)),
+                }
+                array_targets = []
+                for filename, specs in array_specs.items():
+                    operations = []
+                    for name, dtype, category in specs:
+                        operation = dict(op="add", name=name, data_type=dtype, comment="Synthetic ARRAY")
+                        if category is not None:
+                            operation["category"] = category
+                        if not filename.endswith(".stru"):
+                            operation["initial_value"] = None
+                        operations.append(operation)
+                    array_targets.append(dict(file=filename, variable_operations=operations))
+                array_changes = output / ("arrays-" + label + ".json")
+                array_changes.write_text(json.dumps(dict(schema=1, targets=array_targets)), encoding="utf-8")
+                array_work = output / ("arrays-work-" + label)
+                cli(skill, "offline-export", "--project", project, "--workspace", array_work)
+                assert cli(skill, "offline-check", "--workspace", array_work, "--changes", array_changes)["status"] == "checked"
+                array_plan = cli(skill, "offline-build", "--workspace", array_work, "--changes", array_changes)
+                assert tree(project) == before_arrays
+                array_applied = cli(skill, "offline-apply", "--plan-file", array_plan["plan"],
+                    "--expect-plan-sha256", array_plan["plan_sha256"], "--experimental",
+                    "--backup-root", output / ("arrays-backups-" + label))
+                assert array_applied["status"] == "applied"
+                category_codes = {"VAR": 0, "IN": 1, "OUT": 2, "INOUT": 3}
+                named_array_initial = "[2((enabled:=OFF\x07Enable, command:=0\x07Command, value:=0\x07Value))]"
+                for filename, specs in array_specs.items():
+                    original = array_originals[filename]
+                    actual = (project / filename).read_bytes()
+                    host = Path(filename).suffix.lower()[1:]
+                    records = b"".join(array_wire_record(host, name, dtype, "Synthetic ARRAY",
+                        category_codes.get(category, 0),
+                        named_array_initial if filename == "Logic.FB" and dtype == "InputData[2]" else "")
+                        for name, dtype, category in specs)
+                    if host in ("fb", "fc"):
+                        old = (fb if host == "fb" else fc).parse(original)
+                        program = Path(filename).stem.encode("ascii")
+                        # Both observed program profiles put count after the
+                        # short program CString and the independent type DWORD.
+                        offset = old.variable_header_offset + 1 + len(program) + 4
+                        insert = old.inner_offset - 4
+                        expected = (original[:offset] + struct.pack("<I", len(old.variables) + 3)
+                                    + original[offset+4:insert] + records + original[insert:])
+                    else:
+                        old = tables.parse(original, host)
+                        offset = old.count_offset
+                        expected = (original[:offset] + struct.pack("<I", len(old.rows) + 3)
+                                    + original[offset+4:] + records)
+                    assert actual == expected, "Independent whole-file ARRAY oracle differs: " + filename
+                for name, value in before_arrays.items():
+                    if name not in array_specs:
+                        assert digest(project / name) == value, name
+                cli(skill, "offline-restore", "--receipt-file", array_applied["receipt"],
+                    "--expect-receipt-sha256", array_applied["receipt_sha256"], "--experimental",
+                    "--backup-root", output / ("arrays-restore-" + label))
+                assert tree(project) == before_arrays
                 before_fields = tree(project)
                 field_changes = output / ("fbi-fields-" + label + ".json")
                 field_changes.write_text(json.dumps(dict(schema=1, targets=[dict(file="Instances.fbi", variable_operations=[
@@ -341,6 +449,8 @@ def run(output):
                     fb_variable_count=19, fb_internal_project_instances=True, fbi_unallocated_project_instances=True,
                     real_string_scalars_verified=True,
                     real_string_structure_defaults_verified=True,
+                    arrays_four_hosts_numeric_string_structure_verified=True,
+                    arrays_independent_whole_file_wire_verified=True,
                     local_and_global_library_ld_instances=True,
                     fbi_existing_name_comment_initial_fields=True,
                     gvt_unallocated_structures=True, source_lines_added=True,

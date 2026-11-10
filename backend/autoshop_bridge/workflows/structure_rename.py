@@ -45,7 +45,7 @@ def candidates(manifest, blobs, changes):
         except BridgeError:
             skipped.append(dict(file=name, reason="unparsed_fb_not_rewritten"))
             continue
-        if any(v.type_code == 64 and v.type_text in definitions for v in obj.variables):
+        if any(native.fb_structure_reference(v, definitions) is not None for v in obj.variables):
             affected_fb.add(obj.program_name)
             result, updates = native.fb_initializers(blobs[name], definitions)
             if result != blobs[name]:

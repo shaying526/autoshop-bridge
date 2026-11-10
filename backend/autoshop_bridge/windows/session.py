@@ -8,9 +8,12 @@ import time
 from pathlib import Path
 
 from autoshop_bridge.windows.editor import Win32Editor
-from autoshop_bridge.errors import BridgeError
+from autoshop_bridge.errors import BridgeError, FormatRejection
 from autoshop_bridge.formats.native import parse
+from autoshop_bridge.formats.fb import FBContainer, array_comment_display
 from autoshop_bridge.formats.scalar_types import descriptor, STRING_DEFAULT_LENGTH
+from autoshop_bridge.formats.array_types import descriptor as array_descriptor
+from autoshop_bridge.projects.types import array_ui_type_matches
 from autoshop_bridge.projects.inventory import scan
 from autoshop_bridge.storage import (
     assert_hash,
@@ -192,7 +195,16 @@ def assert_native_variables(container, rows):
         raise BridgeError("FB editor/native variable count differs.")
     for index, (var, row) in enumerate(zip(container.variables, rows)):
         expected = var.as_dict(index)
+        if isinstance(container, FBContainer) and var.type_code == 128:
+            expected["comment"] = array_comment_display(var.comment)
         for field in ("name", "category", "data_type", "comment"):
+            if field=='data_type' and var.type_code==128 and expected[field]!=row[field]:
+                try:array=array_descriptor(var.type_text)
+                except FormatRejection as exc:
+                    if exc.code!='array_type_profile_unobserved':raise
+                    array=None
+                if array is not None and var.type_text==array.canonical and array_ui_type_matches(array,row[field]):
+                    continue
             string_descriptor=descriptor(var.type_text) if var.type_code==2048 else None
             if (field=='data_type' and string_descriptor is not None
                     and string_descriptor.string_length==STRING_DEFAULT_LENGTH
@@ -206,7 +218,7 @@ def assert_native_variables(container, rows):
                 raise BridgeError(
                     "FB editor/native variable {} differs: {}.".format(index + 1, field)
                 )
-        if hasattr(var, "initial_raw") and var.type_code in (1, 4, 16, 32, 2048) and var.initial_raw != row["initial_raw"]:
+        if hasattr(var, "initial_raw") and var.type_code in (1, 4, 16, 32, 2048, 4096, 8192) and var.initial_raw != row["initial_raw"]:
             raise BridgeError("FB editor/native scalar initial value differs.")
 
 
@@ -332,6 +344,8 @@ class WindowsSession(Win32Editor):
     def activate(self):
         self.validate_handles()
         mdi = self.user.GetParent(self.program_window)
+        if self.window_message(mdi, 0x0229) == self.program_window:
+            return
         self.window_message(mdi, 0x0222, self.program_window)  # WM_MDIACTIVATE
         self.wait_until(
             lambda: self.window_message(mdi, 0x0229) == self.program_window,
@@ -375,18 +389,7 @@ class WindowsSession(Win32Editor):
         self.activate()
         self.assert_no_cell_edit()
         grid = self.variable_grid()
-        columns = getattr(self, "columns", COLUMNS)
-        # The helper waits for the posted click and verifies a fresh live cell
-        # before returning. No second PowerShell process or unverified F2.
-        selected = self.accessible(
-            "select_verified_cell",
-            grid,
-            variable=variable,
-            column=columns[field],
-            expected=expected,
-        )
-        if selected != "selection_verified":
-            raise BridgeError("Variable cell selection was not verified.")
+        self.select_cell_for_edit(grid, variable, field, expected)
         self.post(grid, 0x100, 113)  # F2, targeted to the verified grid.
         self.post(grid, 0x101, 113)
 
@@ -405,6 +408,16 @@ class WindowsSession(Win32Editor):
                 "Inline variable editor baseline differs; inspect before proceeding."
             )
         return grid, handle
+
+    def select_cell_for_edit(self, grid, variable, field, expected):
+        """Select and verify the live cell before begin_cell dispatches F2."""
+        columns = getattr(self, "columns", COLUMNS)
+        selected = self.accessible(
+            "select_verified_cell", grid, variable=variable,
+            column=columns[field], expected=expected,
+        )
+        if selected != "selection_verified":
+            raise BridgeError("Variable cell selection was not verified.")
 
     def restore_for_cell_edit(self):
         """A minimized ActiveX grid can select cells but cannot enter F2 edit."""
@@ -470,8 +483,9 @@ class WindowsSession(Win32Editor):
         """
         grid, control = self.begin_cell(variable, field, expected)
         scalar=descriptor(value) if field=='data_type' else None
+        array=array_descriptor(value) if field=='data_type' and value!='ARRAY' else None
         string_type=scalar is not None and scalar.string_length is not None
-        selected_value='STRING' if string_type else value
+        selected_value='ARRAY' if array is not None else 'STRING' if string_type else value
         if field in ("data_type", "category"):
             count = self.window_message(control, 0x0146)  # CB_GETCOUNT
             if not 1 <= count <= 4096:
@@ -528,12 +542,12 @@ class WindowsSession(Win32Editor):
         else:
             self.post(control, 0x100, 13)
             self.post(control, 0x101, 13)
-        if string_type:
+        if string_type or array is not None:
             deadline=time.monotonic()+4
             while time.monotonic()<deadline:
                 if (self.window_pid(self.main)!=self.pid or not self.is_autoshop(self.pid)
                         or not self.title_matches(self.text(self.main))):
-                    raise BridgeError('STRING selection project identity changed; do not repeat.')
+                    raise BridgeError(('ARRAY' if array is not None else 'STRING')+' selection project identity changed; do not repeat.')
                 if not self.user.IsWindowEnabled(self.main):
                     # MFC disables the frame before publishing its modal.
                     # Observe within this same deadline; do not resubmit the
@@ -545,15 +559,25 @@ class WindowsSession(Win32Editor):
                                 and self.class_name(hwnd)=='#32770'):dialogs.append(hwnd)
                         return True
                     if not self.user.EnumWindows(visit,0):
-                        raise BridgeError('Cannot enumerate STRING selection modal; do not repeat.')
+                        raise BridgeError('Cannot enumerate '+('ARRAY' if array is not None else 'STRING')+' selection modal; do not repeat.')
                     if dialogs:
+                        if array is not None:
+                            from autoshop_bridge.windows.array_dialog import confirm_array_definition
+                            element=descriptor(array.element_type)
+                            if element is not None and element.code==2048:
+                                self.last_array_definition=confirm_array_definition(self,'STRING',list(array.dimensions),
+                                                                                  string_length=element.string_length)
+                            else:
+                                self.last_array_definition=confirm_array_definition(self,array.element_type,list(array.dimensions))
+                            return
                         result=confirm_string_length(self,scalar.string_length,STRING_DEFAULT_LENGTH)
                         self.last_string_length_confirmation=dict(
                             variable=variable,requested_type=value,native_type=scalar.canonical,
                             length=result['length'],dialog=result['dialog'],confirmation_dispatched_once=True)
                         return
                 time.sleep(0.05)
-            raise BridgeError('STRING selection did not expose the observed length dialog; inspect the partial buffer, do not repeat.')
+            raise BridgeError(('ARRAY selection did not expose the observed definition dialog' if array is not None else
+                               'STRING selection did not expose the observed length dialog')+'; inspect the partial buffer, do not repeat.')
         self.wait_until(
             lambda: not self.user.IsWindowVisible(control), "variable edit commit"
         )
@@ -570,7 +594,14 @@ class WindowsSession(Win32Editor):
         if self.dirty():
             raise BridgeError("Refusing to close a document with unsaved changes.")
         self.activate()
+        self.validate_handles()
+        self.assert_no_cell_edit()
+        if self.dirty():
+            raise BridgeError("Refusing to close a document with unsaved changes.")
         handle = self.program_window
+        mdi = self.user.GetParent(handle)
+        if self.window_message(mdi, 0x0229) != handle:
+            raise BridgeError("Active AutoShop document changed before close.")
         self.post(handle, 0x0010, 0)  # WM_CLOSE, only the clean requested MDI.
         self.wait_until(lambda: not self.user.IsWindow(handle), "document close")
         self.program_window = self.hwnd = 0

@@ -20,7 +20,7 @@ from autoshop_bridge.storage import (
     write_json_new,
     write_new,
 )
-from autoshop_bridge.formats.tables import parse, comment_display
+from autoshop_bridge.formats.tables import parse, comment_display, structure_comment_display
 from autoshop_bridge.projects import tables as table_context
 from autoshop_bridge.projects import types as type_context
 from autoshop_bridge.projects.identifiers import precheck_addition_names
@@ -98,16 +98,20 @@ def load(workspace, *, editor_project=None):
     precheck_addition_names(changes)
     named = [op["data_type"] for op in operations
              if isinstance(op, dict) and op.get("op") == "add"
-             and type_context.descriptor(op.get("data_type")) is None]
-    if editor_project is not None and obj.kind == "gvt" and named:
+             and type_context.descriptor(op.get("data_type")) is None
+             and type_context.builtin_array(op.get('data_type')) is None]
+    if editor_project is not None and named:
         from autoshop_bridge.formats.offline_globals import rebuild
-        context = type_context.catalog(editor_project, named)
-        if any(context["types"][name]["code"] != 64 for name in named):
-            raise BridgeError("Global table editor additions require project structures.")
+        # Table declarations store the exact root identity. The IDE owns
+        # semantic dependency diagnostics; freeze the readable definition
+        # bytes without imposing the shared catalog's recursive constraints.
+        context = type_context.ide_catalog(editor_project,named,target=Path(manifest['native_path']))
+        if any(context["types"][name]["code"] not in (64,128) for name in named):
+            raise BridgeError("Table editor named additions require project structures.")
         type_context.check(context)
-        definitions = {name: regular_file(Path(context["types"][name]["path"])).read_bytes()
+        definitions = {context['types'][name].get('element_type',name): regular_file(Path(context["types"][name]["path"])).read_bytes()
                        for name in named}
-        result = rebuild(raw, operations, definitions)
+        result = rebuild(raw, operations, definitions) if obj.kind=='gvt' else obj.rebuild(operations,structure_definitions=definitions)
         type_context.check(context)
         manifest["editor_type_context"] = context
     else:
@@ -273,9 +277,11 @@ def editor_read(project, table, pid=None, open_if_missing=False, output=None):
     raw = target.read_bytes()
     obj = parse(raw, target.suffix.lower()[1:])
     rows = adapter.grid()
-    matches, reason = True, None
+    matches, reason, array_verification = True, None, None
     try:
-        assert_native_table(obj, rows)
+        array_verification=assert_native_table(obj, rows)
+        if array_verification and array_verification['unverified_native_fields']:
+            matches,reason=False,'Existing ARRAY native type fields are not fully interpreted; see array_type_verification.'
     except BridgeError as exc:
         matches, reason = False, str(exc)
     result = dict(
@@ -295,22 +301,25 @@ def editor_read(project, table, pid=None, open_if_missing=False, output=None):
         mismatch_reason=reason,
     )
     result["grid_read"] = getattr(adapter, "last_grid_read", None)
+    if array_verification is not None:result['array_type_verification']=array_verification
     if output:
         write_json_new(output, result)
-        return dict(
+        summary=dict(
             status=result["status"],
             output=str(output.resolve()),
             row_count=len(rows),
             modified=result["modified"],
             displayed_fields_match_native=matches,
         )
+        if array_verification is not None:summary['array_type_verification']=array_verification
+        return summary
     return result
 
 
 def semantic_document(obj):
     document = obj.document()
     for row in document["rows"]:
-        row["comment"] = comment_display(row["comment"])
+        row["comment"] = (structure_comment_display if obj.kind == 'stru' else comment_display)(row["comment"])
     return document
 
 
@@ -339,8 +348,13 @@ def editor_edit(
     if obj.kind == "stru" and any(op.get("op") == "set" and op.get("field") == "name" for op in ops):
         raise BridgeError("Structure member rename is implemented by table-apply or structure-rename-plan/apply with the project closed, including associated native metadata. Editor rename has not implemented that synchronization yet.")
     context = manifest.get("editor_type_context", dict(types={}, hashes={}))
-    complex_names = {op["name"] for op in ops if op["op"] == "add"
-                     and op["data_type"] in context["types"]}
+    named_structure_names = {op["name"] for op in ops if op["op"] == "add"
+                     and op["data_type"] in context["types"] and context['types'][op['data_type']]['code']==64}
+    # STRU named members have no independent initializer/address columns. Their
+    # selector preflight is shared, but the GVT opaque-default exception is not.
+    complex_names = named_structure_names if obj.kind == 'gvt' else set()
+    array_names={op['name'] for op in ops if op['op']=='add' and type_context.array_descriptor(op['data_type']) is not None}
+    builtin_array_names={op['name'] for op in ops if op['op']=='add' and type_context.builtin_array(op['data_type']) is not None}
     edited = obj.raw != result
     if edited and not experimental and not dry_run:
         raise BridgeError("Table editor modifications require --experimental.")
@@ -373,19 +387,21 @@ def editor_edit(
         before = adapter.grid()
         if adapter.dirty():
             raise BridgeError("Table editor has unsaved changes.")
-        assert_native_table(obj, before)
+        array_verification=assert_native_table(obj, before)
         dependencies()
         prepare_rows=getattr(adapter,'prepare_edit_rows',None)
         if edited and not dry_run and callable(prepare_rows):
             before=prepare_rows(before)
             if adapter.dirty():raise BridgeError('Table editor became dirty while preparing actual declaration metadata.')
             assert_hash(target,manifest['native_sha256'])
-            assert_native_table(obj,before)
+            array_verification=assert_native_table(obj,before)
             dependencies()
-        requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in complex_names}
-        deferred_preflight = bool(complex_names) and not before
-        if complex_names and before:
-            probe = next((r for r in before if type_context.descriptor(r["data_type"]) is not None), before[0])
+        requested_types = {op["data_type"] for op in ops if op["op"] == "add" and op["name"] in named_structure_names}
+        if array_names:requested_types.add('ARRAY')
+        probe = next((r for r in before if type_context.descriptor(r['data_type']) is not None),None)
+        if probe is None and before and not array_names:probe=before[0]
+        deferred_preflight = bool(requested_types) and probe is None
+        if requested_types and probe is not None:
             choices = adapter.selector_choices(probe["name"], "data_type", probe["data_type"])
             if any(choices.count(name) != 1 for name in requested_types):
                 raise BridgeError("Requested project structure is unavailable or ambiguous in the IDE selector.")
@@ -394,7 +410,7 @@ def editor_edit(
         if dry_run:
             return dict(
                 status="table_editor_ready", row_count=len(before), edited=edited,
-                selector_preflight="pending_first_default_row" if deferred_preflight else "performed" if complex_names else "not_required",
+                selector_preflight="pending_first_default_row" if deferred_preflight else "performed" if requested_types else "not_required",
             )
         if not edited:
             if close_after:
@@ -405,7 +421,7 @@ def editor_edit(
             )
         saved = create_backup(target, raw, backup_root, "table_editor")
         write_json_new(
-            saved / "table_editor_before.json", dict(rows=before, native=obj.document())
+            saved / "table_editor_before.json", dict(rows=before, native=obj.document(),array_type_verification=array_verification)
         )
         write_json_new(
             saved / "table_editor_changes.json", dict(schema=1, operations=ops)
@@ -427,12 +443,12 @@ def editor_edit(
                     row = next(r for r in desired if r["name"] == op["name"])
                     field = op["field"]
                     expected = (
-                        comment_display(op["expected"])
+                        (structure_comment_display if obj.kind == 'stru' else comment_display)(op["expected"])
                         if field == "comment"
                         else op["expected"]
                     )
                     value = (
-                        comment_display(op["value"])
+                        (structure_comment_display if obj.kind == 'stru' else comment_display)(op["value"])
                         if field == "comment"
                         else op["value"]
                     )
@@ -448,7 +464,8 @@ def editor_edit(
                         raise BridgeError("Full table readback differs after edit.")
                 else:
                     desired = add_row(adapter, current, op, obj.kind, complex_type=op["name"] in complex_names,
-                                      preflight_types=requested_types if deferred_preflight and not current else ())
+                                      preflight_types=requested_types if deferred_preflight else ())
+                    deferred_preflight=False
                 current = desired
                 assert_hash(target, manifest["native_sha256"])
                 table_context.validate(manifest, ops, target)
@@ -456,10 +473,10 @@ def editor_edit(
             if adapter.grid() != current or not adapter.dirty():
                 raise BridgeError("Table final readback/dirty state differs.")
             candidate = parse(result, obj.kind)
-            assert_native_table(candidate, current)
+            array_verification=assert_native_table(candidate, current,strict_array_names=array_names)
             write_json_new(
                 saved / "table_editor_expected.json",
-                dict(rows=current, native=candidate.document()),
+                dict(rows=current, native=candidate.document(),array_type_verification=array_verification),
             )
             response = dict(
                 status="table_editor_updated_not_saved",
@@ -470,6 +487,7 @@ def editor_edit(
                 requires_manual_save=True,
                 autoshop_verified=False,
             )
+            if array_verification is not None:response['array_type_verification']=array_verification
             if save:
                 assert_hash(target, manifest["native_sha256"])
                 table_context.validate(manifest, ops, target)
@@ -479,8 +497,10 @@ def editor_edit(
                 after = parse(after_raw, obj.kind)
                 if adapter.dirty() or adapter.grid() != current:
                     raise BridgeError("Table view changed during save.")
-                assert_native_table(after, current)
+                array_verification=assert_native_table(after, current,strict_array_names=array_names)
                 _assert_editor_saved(candidate, after, complex_names)
+                if obj.kind=='gvt' and any(row.name in builtin_array_names and row.initial_raw!='' for row in after.rows):
+                    raise BridgeError('Saved ARRAY default native initializer differs from the observed empty record.')
                 dependencies()
                 table_context.validate(manifest, ops, target, include_target=False)
                 response.update(
@@ -488,6 +508,7 @@ def editor_edit(
                     requires_manual_save=False,
                     sha256=sha256(after_raw),
                 )
+                if array_verification is not None:response['array_type_verification']=array_verification
                 if complex_names:
                     response["complex_initialization"] = dict(scope="IDE defaults; hidden preview is independent from native initializer", native=[r.document() for r in after.rows if r.name in complex_names], editor=[r for r in current if r["name"] in complex_names])
                 if close_after:
