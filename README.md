@@ -12,7 +12,7 @@
 
 Copy this prompt into your local Windows AI agent.
 
-> Download and fully extract [AutoShop Bridge](https://github.com/shaying526/autoshop-bridge) and install it as the `autoshop-bridge` folder in this project’s Skill directory (`.agents/skills/autoshop-bridge/` for Codex, `.claude/skills/autoshop-bridge/` for Claude Code, or the project Skill directory documented by your client), keeping `SKILL.md`, `backend/` and all bundled files together. From the installed folder, run `python -B scripts/check_bundle.py` and `python -B backend/autoshop_bridge_cli.py --version` to verify the package and CLI.
+> Download and fully extract [https://github.com/shaying526/autoshop-bridge](https://github.com/shaying526/autoshop-bridge) and install it as the `autoshop-bridge` folder in this project’s Skill directory (`.agents/skills/autoshop-bridge/` for Codex, `.claude/skills/autoshop-bridge/` for Claude Code, or the project Skill directory documented by your client), keeping `SKILL.md`, `backend/` and all bundled files together. From the installed folder, run `python -B scripts/check_bundle.py` and `python -B backend/autoshop_bridge_cli.py --version` to verify the package and CLI.
 
 ### Minimal use
 
@@ -105,7 +105,7 @@ Distribution model **B: portable bundled runtime**. Backend code is generated fr
 
 把下面这段话复制给你在 Windows 本机运行的 AI。
 
-> 请从 [GitHub](https://github.com/shaying526/autoshop-bridge) 下载并完整解压 AutoShop Bridge，将整个包作为 `autoshop-bridge` 文件夹安装到当前项目的 Skill 目录（Codex 用 `.agents/skills/autoshop-bridge/`，Claude Code 用 `.claude/skills/autoshop-bridge/`，其他客户端按各自文档选择项目级 Skill 目录），保留 `SKILL.md`、`backend/` 及包内全部文件。请在安装目录运行 `python -B scripts/check_bundle.py` 和 `python -B backend/autoshop_bridge_cli.py --version`，核对包完整性和 CLI 版本。
+> 请从 [https://github.com/shaying526/autoshop-bridge](https://github.com/shaying526/autoshop-bridge) 下载并完整解压 AutoShop Bridge，将整个包作为 `autoshop-bridge` 文件夹安装到当前项目的 Skill 目录（Codex 用 `.agents/skills/autoshop-bridge/`，Claude Code 用 `.claude/skills/autoshop-bridge/`，其他客户端按各自文档选择项目级 Skill 目录），保留 `SKILL.md`、`backend/` 及包内全部文件。请在安装目录运行 `python -B scripts/check_bundle.py` 和 `python -B backend/autoshop_bridge_cli.py --version`，核对包完整性和 CLI 版本。
 
 ### 最简单的使用方式
 
